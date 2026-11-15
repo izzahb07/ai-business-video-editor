@@ -24,6 +24,11 @@ Your project saves automatically on the device; closing Safari doesn't lose your
 
 ---
 
+## ✨ The fastest way: Auto Edit
+Import your clips → tap **✨ Let AI edit it for me** (or the **AI** tab) → pick a style → type what the video is about → **✨ Auto edit my video**.
+It removes silences, adds captions, colour, transitions, music that dips when you talk, whoosh effects, and a hook + call to action — as one change you can undo with one tap. Each step shows ✓ done, – skipped (with the reason) or ✕ failed.
+For the best captions and AI-written hooks, connect the optional AI server (below); without it, captions use the on-device speech model and the hook comes from a template.
+
 ## 📱 How to use it on your iPhone
 
 **Layout:** video preview at the top → timeline in the middle → tool panel → tool tabs at the bottom. Tap **More space** above the panel to hide the timeline when you need room.

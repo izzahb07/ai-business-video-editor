@@ -9,10 +9,12 @@ import { editTranscript, generateHooks, templateHooks, STYLE_LABEL, type HooksRe
 import { serviceConfigured, useService } from '../lib/ai/service';
 import { Chips, Section, Slider, Toggle } from './ui';
 import { toast } from './Toast';
+import { AutoEditCard } from './AutoEdit';
 
 export function AIPanel() {
   return (
     <div className="panel-stack" data-testid="ai-panel">
+      <AutoEditCard />
       <SmartEdit />
       <HookWriter />
     </div>

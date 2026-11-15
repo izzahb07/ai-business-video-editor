@@ -9,6 +9,7 @@ import { Chips, Empty, Section, Slider, Toggle, secs } from './ui';
 import { IconCopy, IconLeft, IconPlay, IconRight, IconTrash } from './Icons';
 import { toast } from './Toast';
 import { useImport } from './ClipStrip';
+import { useUi } from '../uiState';
 
 const TRANSITIONS: { value: TransitionType; label: string }[] = [
   { value: 'none', label: 'Cut' },
@@ -51,6 +52,7 @@ export function EditPanel() {
           <SplitButton />
         </div>
         {status && <div className="import-status" role="status"><span className="spinner" /> {status}</div>}
+        <button className="primary-btn" onClick={() => useUi.getState().setTab('ai')} data-testid="goto-auto">✨ Let AI edit it for me</button>
         <Empty>Tap a clip on the timeline to trim, crop, rotate, reposition or add a transition. Drag a selected clip to reorder it, or drag its yellow edges to trim.</Empty>
         {input}
       </div>

@@ -298,12 +298,16 @@ const HOOKS = {
   claimsToVerify: ['"same-day service"'],
 };
 
-async function moduleAI(browser, { A, importClips }) {
-  console.log('\n▶ Module 6: silence/dead-air removal, scene changes, repeated shots, accept/reject, AI hooks');
-  const G = fixture('G_talking_with_pauses.mp4', (p) => ff(
+function talkingFixture() {
+  return fixture('G_talking_with_pauses.mp4', (p) => ff(
     '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30:duration=4', '-f', 'lavfi', '-i', 'smptebars=size=1280x720:rate=30:duration=4',
     '-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*440*t)*(between(t,0,2)+between(t,3.5,5.5)+between(t,6.2,7.5))':s=48000:d=8",
     '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-map', '2:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', p));
+}
+
+async function moduleAI(browser, { A, importClips }) {
+  console.log('\n▶ Module 6: silence/dead-air removal, scene changes, repeated shots, accept/reject, AI hooks');
+  const G = talkingFixture();
   const srv = await startAiServer({ words: [], hooksResult: HOOKS });
   const { ctx, page, errors } = await newPage(browser);
   const dur = async () => (await page.getByTestId('tl-time').textContent()).split('/')[1].trim();
@@ -448,4 +452,64 @@ async function moduleExport(browser, { A, C, importClips }) {
   }
 }
 
-export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio, ai: moduleAI, export: moduleExport };
+// ------------------------------------------------------------------ Auto Edit (one tap)
+async function moduleAuto(browser, { A, importClips }) {
+  console.log('\n▶ Auto Edit: one tap edits everything (with and without the AI server)');
+  const G = talkingFixture();
+  const srv = await startAiServer({ words: WORDS, hooksResult: HOOKS });
+  const status = async (page, id) => page.getByTestId(`auto-step-${id}`).getAttribute('data-status');
+  try {
+    // 1) With the AI server connected.
+    const { ctx, page, errors } = await newPage(browser);
+    await importClips(page, [G, A]);
+    await page.getByTestId('info').click();
+    await page.getByTestId('svc-url').fill(srv.url);
+    await page.getByTestId('svc-pass').fill(srv.passcode);
+    await page.getByTestId('svc-test').click();
+    await page.getByTestId('svc-status').filter({ hasText: 'Connected' }).waitFor({ timeout: 10000 });
+    await page.getByLabel('Close').click();
+    await page.getByTestId('goto-auto').click();
+    await page.getByTestId('auto-topic').fill('Office cleaning service');
+    await page.getByTestId('auto-run').click();
+    await page.getByTestId('auto-run').filter({ hasText: 'Auto edit my video' }).waitFor({ timeout: 120000 });
+    const st = {};
+    for (const id of ['silence', 'captions', 'colour', 'transitions', 'music', 'sfx', 'hook']) st[id] = await status(page, id);
+    console.log('    steps:', JSON.stringify(st));
+    check(Object.values(st).every((v) => v === 'done'), 'every Auto Edit step completed with the server connected');
+    await page.screenshot({ path: path.join(OUT, 'auto-1-done.png') });
+    const dur = (await page.getByTestId('tl-time').textContent()).split('/')[1].trim();
+    check(dur === '0:08.9', `silences removed automatically (11.0 s → ${dur})`);
+    check((await page.getByTestId('caption-bar').count()) > 0, 'captions added automatically');
+    check((await page.getByTestId('overlay-bar').count()) === 2, 'AI hook + call to action added');
+    check((await page.getByTestId('audio-bar').count()) === 2, 'music + whoosh added');
+    const file = await exportAndDownload(page, 'auto-edit', { Resolution: '720p' });
+    check(decodesClean(file), 'auto-edited video exports and decodes cleanly');
+    const music = rmsFiltered(file, 6.2, 8.4, 'bandreject=f=440:width_type=q:w=12,bandreject=f=440:width_type=q:w=12');
+    check(music > -45, `music is in the exported video (${music.toFixed(1)} dB)`);
+    const hook = regionStats(file, 1.0, 40, 300, 640, 180).frac(isWhite);
+    check(hook > 0.02, `hook text burned into the first seconds (${(hook * 100).toFixed(1)}% text pixels)`);
+    await page.getByTestId('undo').click();
+    const back = (await page.getByTestId('tl-time').textContent()).split('/')[1].trim();
+    check(back === '0:11.0' && (await page.getByTestId('overlay-bar').count()) === 0, 'one Undo reverts the whole auto edit');
+    check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+    await ctx.close();
+
+    // 2) No server: on-device captions can't download in this test environment → reported honestly, rest still done.
+    const p2 = await newPage(browser);
+    await importClips(p2.page, [G, A]);
+    await p2.page.getByTestId('goto-auto').click();
+    await p2.page.getByTestId('auto-topic').fill('office cleaning');
+    await p2.page.getByTestId('auto-run').click();
+    await p2.page.getByTestId('auto-run').filter({ hasText: 'Auto edit my video' }).waitFor({ timeout: 150000 });
+    const cap = await status(p2.page, 'captions'), hookSt = await status(p2.page, 'hook'), sil = await status(p2.page, 'silence');
+    const hookNote = await p2.page.getByTestId('auto-step-hook').textContent();
+    check(cap === 'failed', `captions step reports a clear failure when the speech model can't download (${cap})`);
+    check(sil === 'done' && hookSt === 'done' && /template/.test(hookNote), `other steps still done; hook honestly marked as template (${hookNote.slice(0, 60)}…)`);
+    await p2.page.screenshot({ path: path.join(OUT, 'auto-2-no-server.png') });
+    await p2.ctx.close();
+  } finally {
+    srv.close();
+  }
+}
+
+export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio, ai: moduleAI, export: moduleExport, auto: moduleAuto };
