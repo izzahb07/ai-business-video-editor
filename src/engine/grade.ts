@@ -47,6 +47,8 @@ void main() {
   lin *= exp2(u_exposure * 2.0);
   lin *= vec3(1.0 + 0.18 * u_temperature, 1.0 - 0.10 * u_tint, 1.0 - 0.18 * u_temperature);
   c = toGamma(lin);
+  // Gentle additive shift so warm/cool also tints saturated colours (like pro WB tools).
+  c += vec3(0.1 * u_temperature, -0.04 * u_tint, -0.1 * u_temperature);
 
   // Tonal ranges.
   float l = dot(c, LUMA);
