@@ -45,7 +45,7 @@ See [ROADMAP.md](ROADMAP.md) for what's coming (trim/split, captions, colour gra
 
 1. Merge the development branch into `main` (on GitHub: **Pull requests → New → compare `claude/…` → Create → Merge**).
 2. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-3. Open the **Actions** tab and wait for "Test and deploy to GitHub Pages" to finish (green tick). Your link is shown there.
+3. Open the **Actions** tab and wait for "Build and deploy video editor to GitHub Pages" to finish (green tick). Your link is shown there.
 
 Every later merge into `main` re-runs the tests and redeploys automatically.
 
