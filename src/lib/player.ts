@@ -1,15 +1,17 @@
 /**
  * Preview player.
- * - The Web Audio clock is the master clock (sample-accurate, survives clip switches).
- * - Video elements are always muted (so iOS lets us switch between them freely) and are
- *   kept in sync with the audio clock; each frame is drawn through the shared compositor.
+ * - The Web Audio clock is the master clock; all sound comes from the same audio graph as export.
+ * - Video elements are muted (so iOS lets us switch freely) and kept in sync with the clock.
+ * - Frames are drawn through the same Renderer as export.
  */
 import { create } from 'zustand';
 import type { Asset, Project } from '../types';
-import { drawFrame } from './compositor';
-import { getAudio, getPooledVideo, seekVideo } from './registry';
+import { getPooledVideo, imagesMap, loadImage, seekVideo } from './registry';
 import { layoutClips, locate, totalDuration, type PlacedClip } from './timeline';
-import { CUT_FADE } from './audioMix';
+import { Renderer } from '../engine/render';
+import { buildAudioGraph, type GraphHandle } from '../engine/audio';
+import { isOverlayActive } from '../engine/overlays';
+import type { FrameSource } from './compositor';
 
 interface PlayerUi {
   time: number;
@@ -29,7 +31,6 @@ let audioCtx: AudioContext | null = null;
 /** Must be called from a tap/click handler the first time (iOS requirement). */
 export function unlockAudio(): AudioContext {
   if (!audioCtx) {
-    // Let preview sound play even when the iPhone's silent switch is on (Safari 16.4+).
     try {
       const nav = navigator as Navigator & { audioSession?: { type: string } };
       if (nav.audioSession) nav.audioSession.type = 'playback';
@@ -43,8 +44,10 @@ export function unlockAudio(): AudioContext {
 export class PreviewPlayer {
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
+  private renderer: Renderer | null = null;
   private project: Project | null = null;
   private placed: PlacedClip[] = [];
+  private assets: Record<string, Asset> = {};
   private duration = 0;
 
   private playing = false;
@@ -52,15 +55,24 @@ export class PreviewPlayer {
   private startTimelineTime = 0;
   private time = 0;
   private raf = 0;
-  private nodes: AudioBufferSourceNode[] = [];
+  private graph: GraphHandle | null = null;
+  private master: GainNode | null = null;
   private activeVideo: HTMLVideoElement | null = null;
   private activeClipId: string | null = null;
   private seekToken = 0;
   private lastUiUpdate = 0;
+  /** Before/after split (0..1) or null. */
+  compare: number | null = null;
+  /** Called after every drawn frame (selection outlines etc.). */
+  onFrame: (() => void) | null = null;
+  /** Stop playback when reaching this time (clip preview). */
+  private stopAt: number | null = null;
 
   attach(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
+    if (!this.renderer) this.renderer = new Renderer(canvas.width, canvas.height);
+    else this.renderer.resize(canvas.width, canvas.height);
     this.redraw();
   }
 
@@ -70,8 +82,8 @@ export class PreviewPlayer {
     this.ctx = null;
   }
 
-  /** `_assets` is accepted so the preview re-syncs when assets change (e.g. audio finishes decoding). */
-  setProject(project: Project, _assets: Record<string, Asset>) {
+  setProject(project: Project, assets: Record<string, Asset>) {
+    this.assets = assets;
     const wasPlaying = this.playing;
     if (wasPlaying) this.pause();
     this.project = project;
@@ -79,29 +91,32 @@ export class PreviewPlayer {
     this.duration = totalDuration(project.clips);
     if (this.time > this.duration) this.time = this.duration;
     usePlayer.getState().setTime(this.time);
+    // Make sure logo/image overlays are decoded.
+    for (const o of project.overlays) {
+      if (o.kind === 'image' && o.assetId && !imagesMap().has(o.assetId)) void loadImage(o.assetId).then(() => this.redraw());
+    }
     void this.seek(this.time);
     if (wasPlaying) this.play();
   }
 
-  getTime() {
-    return this.time;
-  }
+  getTime() { return this.time; }
+  getDuration() { return this.duration; }
+  isPlaying() { return this.playing; }
 
-  isPlaying() {
-    return this.playing;
-  }
-
-  /** Call from a user gesture. */
   play() {
     if (!this.project || this.placed.length === 0) return;
     const ac = unlockAudio();
     if (this.time >= this.duration - 0.05) this.time = 0;
     this.playing = true;
     usePlayer.getState().setPlaying(true);
-    this.startCtxTime = ac.currentTime + 0.05;
+    this.startCtxTime = ac.currentTime + 0.06;
     this.startTimelineTime = this.time;
-    this.scheduleAudio(ac, this.startCtxTime, this.time);
-    this.syncVideo(true);
+    if (!this.master) {
+      this.master = ac.createGain();
+      this.master.connect(ac.destination);
+    }
+    this.graph = buildAudioGraph(ac, this.project, this.time, this.duration, this.startCtxTime, this.master);
+    this.syncVideos(true);
     this.loop();
   }
 
@@ -111,17 +126,25 @@ export class PreviewPlayer {
     this.playing = false;
     usePlayer.getState().setPlaying(false);
     cancelAnimationFrame(this.raf);
-    for (const n of this.nodes) {
-      try { n.stop(); } catch { /* already stopped */ }
-    }
-    this.nodes = [];
+    this.graph?.stop();
+    this.graph = null;
     this.activeVideo?.pause();
+    this.forEachPip((v) => v.pause());
     usePlayer.getState().setTime(this.time);
   }
 
   toggle() {
     if (this.playing) this.pause();
-    else this.play();
+    else { this.stopAt = null; this.play(); }
+  }
+
+  /** Preview just one part of the timeline (e.g. a single clip). Call from a tap. */
+  async playRange(start: number, end: number) {
+    this.pause();
+    unlockAudio();
+    await this.seek(start);
+    this.stopAt = end;
+    this.play();
   }
 
   async seek(t: number) {
@@ -131,23 +154,26 @@ export class PreviewPlayer {
     usePlayer.getState().setTime(this.time);
     const token = ++this.seekToken;
     const loc = locate(this.placed, this.time);
-    if (!loc) {
-      this.drawVideo(null);
-      return;
+    const waits: Promise<void>[] = [];
+    if (loc && !this.isImageClip(loc.placed.clip.assetId)) {
+      const v = getPooledVideo(loc.placed.clip.assetId);
+      if (v) {
+        this.setActive(v, loc.placed.clip.id);
+        waits.push(seekVideo(v, loc.sourceTime).catch(() => {}));
+      }
     }
-    const v = getPooledVideo(loc.placed.clip.assetId);
-    if (!v) return;
-    this.setActive(v, loc.placed.clip.id);
-    try {
-      await seekVideo(v, loc.sourceTime);
-    } catch { /* ignore */ }
+    for (const o of this.activePips(this.time)) {
+      const v = getPooledVideo(o.assetId!, 'pip:' + o.id);
+      if (v) waits.push(seekVideo(v, (o.in ?? 0) + (this.time - o.start)).catch(() => {}));
+    }
+    await Promise.all(waits);
     if (token !== this.seekToken) return;
-    this.drawVideo(v);
+    this.redraw();
     if (was) this.play();
   }
 
   redraw() {
-    this.drawVideo(this.activeVideo);
+    this.draw();
   }
 
   private currentTime(): number {
@@ -155,28 +181,18 @@ export class PreviewPlayer {
     return Math.min(this.duration, this.startTimelineTime + Math.max(0, audioCtx.currentTime - this.startCtxTime));
   }
 
-  private scheduleAudio(ac: AudioContext, ctxStart: number, fromTime: number) {
-    for (const p of this.placed) {
-      const { clip } = p;
-      if (p.end <= fromTime || clip.muted || clip.volume <= 0) continue;
-      const buf = getAudio(clip.assetId);
-      if (!buf) continue;
-      const rel = p.start - fromTime;
-      const when = ctxStart + Math.max(0, rel);
-      const offset = clip.in + Math.max(0, -rel);
-      const dur = p.end - Math.max(p.start, fromTime);
-      if (dur <= 0 || offset >= buf.duration) continue;
-      const node = ac.createBufferSource();
-      node.buffer = buf;
-      const g = ac.createGain();
-      const fade = Math.min(CUT_FADE, dur / 4);
-      g.gain.setValueAtTime(0, when);
-      g.gain.linearRampToValueAtTime(clip.volume, when + fade);
-      g.gain.setValueAtTime(clip.volume, when + dur - fade);
-      g.gain.linearRampToValueAtTime(0, when + dur);
-      node.connect(g).connect(ac.destination);
-      node.start(when, offset, dur);
-      this.nodes.push(node);
+  private isImageClip(assetId: string) {
+    return this.assets[assetId]?.kind === 'image';
+  }
+
+  private activePips(t: number) {
+    return (this.project?.overlays ?? []).filter((o) => o.kind === 'video' && o.assetId && isOverlayActive(o, t));
+  }
+
+  private forEachPip(fn: (v: HTMLVideoElement) => void) {
+    for (const o of this.activePips(this.time)) {
+      const v = getPooledVideo(o.assetId!, 'pip:' + o.id);
+      if (v) fn(v);
     }
   }
 
@@ -186,31 +202,31 @@ export class PreviewPlayer {
     this.activeClipId = clipId;
   }
 
-  /** Make sure the right video element is playing at the right position. */
-  private syncVideo(force = false) {
+  private syncVideos(force = false) {
     const t = this.currentTime();
     const loc = locate(this.placed, t);
-    if (!loc) return;
-    const { clip } = loc.placed;
-    const v = getPooledVideo(clip.assetId);
-    if (!v) return;
-    const switched = this.activeClipId !== clip.id || this.activeVideo !== v;
-    if (switched) this.setActive(v, clip.id);
-    const drift = Math.abs(v.currentTime - loc.sourceTime);
-    if (force || switched || drift > 0.2) {
-      if (!v.seeking) v.currentTime = loc.sourceTime;
-    }
-    if (v.paused) void v.play().catch(() => {});
-
-    // Pre-roll the next clip's element so the cut is instant.
-    const next = this.placed[loc.placed.index + 1];
-    if (next && loc.placed.end - t < 0.8) {
-      const nv = getPooledVideo(next.clip.assetId);
-      if (nv && nv !== v && nv.paused && Math.abs(nv.currentTime - next.clip.in) > 0.05 && !nv.seeking) {
-        nv.currentTime = next.clip.in;
+    if (loc && !this.isImageClip(loc.placed.clip.assetId)) {
+      const { clip } = loc.placed;
+      const v = getPooledVideo(clip.assetId);
+      if (v) {
+        const switched = this.activeClipId !== clip.id || this.activeVideo !== v;
+        if (switched) this.setActive(v, clip.id);
+        if ((force || switched || Math.abs(v.currentTime - loc.sourceTime) > 0.2) && !v.seeking) v.currentTime = loc.sourceTime;
+        if (v.paused) void v.play().catch(() => {});
+        const next = this.placed[loc.placed.index + 1];
+        if (next && loc.placed.end - t < 0.8) {
+          const nv = getPooledVideo(next.clip.assetId);
+          if (nv && nv !== v && nv.paused && Math.abs(nv.currentTime - next.clip.in) > 0.05 && !nv.seeking) nv.currentTime = next.clip.in;
+          getPooledVideo(clip.assetId);
+        }
       }
-      // Keep the active one most-recently-used in the pool.
-      getPooledVideo(clip.assetId);
+    }
+    for (const o of this.activePips(t)) {
+      const v = getPooledVideo(o.assetId!, 'pip:' + o.id);
+      if (!v) continue;
+      const st = (o.in ?? 0) + (t - o.start);
+      if ((force || Math.abs(v.currentTime - st) > 0.25) && !v.seeking) v.currentTime = st;
+      if (v.paused) void v.play().catch(() => {});
     }
   }
 
@@ -218,36 +234,48 @@ export class PreviewPlayer {
     if (!this.playing) return;
     const t = this.currentTime();
     this.time = t;
+    if (this.stopAt != null && t >= this.stopAt) {
+      this.pause();
+      this.stopAt = null;
+      return;
+    }
     if (t >= this.duration - 1e-3) {
       this.pause();
       this.time = this.duration;
       usePlayer.getState().setTime(this.time);
       return;
     }
-    this.syncVideo();
-    this.drawVideo(this.activeVideo);
+    this.syncVideos();
+    this.draw();
     const now = performance.now();
-    if (now - this.lastUiUpdate > 66) {
+    if (now - this.lastUiUpdate > 50) {
       this.lastUiUpdate = now;
       usePlayer.getState().setTime(t);
     }
     this.raf = requestAnimationFrame(this.loop);
   };
 
-  private drawVideo(v: HTMLVideoElement | null) {
-    const { canvas, ctx, project } = this;
-    if (!canvas || !ctx || !project) return;
+  private draw() {
+    const { canvas, ctx, project, renderer } = this;
+    if (!canvas || !ctx || !project || !renderer) return;
+    renderer.resize(canvas.width, canvas.height);
+    const v = this.activeVideo;
     const loc = locate(this.placed, this.time);
-    const fit = loc?.placed.clip.fit ?? 'fill';
-    const ready = v && v.readyState >= 2 && v.videoWidth > 0;
-    drawFrame(
-      ctx,
-      canvas.width,
-      canvas.height,
-      ready ? { image: v, width: v.videoWidth, height: v.videoHeight } : null,
-      fit,
-      project.settings,
-    );
+    let main: FrameSource | null = null;
+    if (loc && this.isImageClip(loc.placed.clip.assetId)) {
+      const bmp = imagesMap().get(loc.placed.clip.assetId);
+      if (bmp) main = { image: bmp, width: bmp.width, height: bmp.height };
+      else void loadImage(loc.placed.clip.assetId).then(() => this.redraw());
+    } else if (v && v.readyState >= 2 && v.videoWidth > 0 && this.activeClipId === loc?.placed.clip.id) {
+      main = { image: v, width: v.videoWidth, height: v.videoHeight };
+    }
+    const videos = new Map<string, FrameSource>();
+    for (const o of this.activePips(this.time)) {
+      const pv = getPooledVideo(o.assetId!, 'pip:' + o.id);
+      if (pv && pv.readyState >= 2 && pv.videoWidth) videos.set(o.id, { image: pv, width: pv.videoWidth, height: pv.videoHeight });
+    }
+    renderer.render(ctx, project, this.time, { main, videos, images: imagesMap() }, { compare: this.compare });
+    this.onFrame?.();
   }
 }
 
