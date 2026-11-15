@@ -14,6 +14,7 @@ import { SOUNDS, getSoundAsset } from './soundLibrary';
 import { textOverlay } from './overlayTemplates';
 import { editTranscript, generateHooks, templateHooks } from './ai/hooks';
 import { serviceConfigured, useService } from './ai/service';
+import { guard, hasCrashed } from './crashGuard';
 
 export type AutoStyle = 'business' | 'social' | 'cinematic';
 
@@ -71,7 +72,8 @@ export async function runAutoEdit(opts: AutoOptions, onStep: (id: string, status
   const originalStarts = new Set(p.clips.map((c) => c.id));
 
   await step('silence', opts.removeSilence, async () => {
-    const sugg = await analyzeProject(p, assets(), { silence: { thresholdDb: null, minPause: 0.5, padding: 0.12 } });
+    if (hasCrashed('auto:silence')) return 'SKIP: this step crashed Safari before on this device (not enough memory)';
+    const sugg = await guard('auto:silence', () => analyzeProject(p, assets(), { audioOnly: true, silence: { thresholdDb: null, minPause: 0.5, padding: 0.12 } }));
     const cuts = sugg.filter((s) => s.type === 'silence' || s.type === 'deadair').sort((a, b) => b.at - a.at);
     if (!cuts.length) return 'SKIP: no long pauses found';
     const before = totalDuration(p.clips);
@@ -83,6 +85,9 @@ export async function runAutoEdit(opts: AutoOptions, onStep: (id: string, status
     const ids = [...new Set(p.clips.map((c) => c.assetId))].filter((id) => assets()[id]?.kind === 'video' && assets()[id]?.hasAudio);
     if (!ids.length) return 'SKIP: no clips with sound';
     const engine: Engine = serviceConfigured() && useService.getState().consentAudio ? 'cloud' : 'on-device';
+    if (engine === 'on-device' && hasCrashed('transcribe:on-device')) {
+      return 'SKIP: on-device captions crashed Safari before on this iPhone (not enough memory). Connect the AI server (ⓘ) for captions, or add them in the Captions tab.';
+    }
     const segs: CaptionSegment[] = [];
     for (let i = 0; i < ids.length; i++) {
       const a = assets()[ids[i]];

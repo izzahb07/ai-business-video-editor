@@ -4,6 +4,7 @@ import type { ExportSettings } from '../types';
 import { estimateFileSize, outputSize, totalDuration, videoBitrate } from '../lib/timeline';
 import { canEncodeVideo } from 'mediabunny';
 import { toSrt } from '../engine/captions';
+import { guard } from '../lib/crashGuard';
 import { fmtBytes, fmtTime } from '../lib/capabilities';
 import { ExportCancelled, exportProject, type ExportProgress, type ExportResult } from '../lib/export/exporter';
 import { player } from '../lib/player';
@@ -91,9 +92,9 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
     document.addEventListener('visibilitychange', onVis);
 
     try {
-      const result = await exportProject(project, assets, settings, (progress) => {
+      const result = await guard('export', () => exportProject(project, assets, settings, (progress) => {
         if (!ac.signal.aborted) setState({ kind: 'running', progress });
-      }, ac.signal);
+      }, ac.signal));
       setState({ kind: 'done', result, url: URL.createObjectURL(result.blob) });
     } catch (err) {
       if (err instanceof ExportCancelled || ac.signal.aborted) {

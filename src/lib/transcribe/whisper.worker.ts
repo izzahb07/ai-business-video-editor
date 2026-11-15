@@ -7,15 +7,17 @@
 import { pipeline, env, type AutomaticSpeechRecognitionPipeline } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
+// One thread keeps memory low (and SharedArrayBuffer isn't available on GitHub Pages anyway).
+if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
 
 let asr: AutomaticSpeechRecognitionPipeline | null = null;
 let loadedModel = '';
 
-type Req = { id: number; audio: Float32Array; model: string; language: string | null };
+type Req = { id: number; audio: Float32Array; model: string; language: string | null; allowGpu: boolean };
 
-async function load(model: string) {
+async function load(model: string, allowGpu: boolean) {
   if (asr && loadedModel === model) return asr;
-  const hasWebGPU = !!(self.navigator as Navigator & { gpu?: unknown }).gpu;
+  const hasWebGPU = allowGpu && !!(self.navigator as Navigator & { gpu?: unknown }).gpu;
   const opts: Record<string, unknown> = {
     progress_callback: (p: { status: string; file?: string; progress?: number; loaded?: number; total?: number }) => {
       if (p.status === 'progress') postMessage({ type: 'download', file: p.file, progress: p.progress ?? 0, loaded: p.loaded, total: p.total });
@@ -34,9 +36,9 @@ async function load(model: string) {
 }
 
 self.onmessage = async (e: MessageEvent<Req>) => {
-  const { id, audio, model, language } = e.data;
+  const { id, audio, model, language, allowGpu } = e.data;
   try {
-    const p = await load(model);
+    const p = await load(model, allowGpu);
     postMessage({ type: 'status', id, status: 'transcribing' });
     const common = { chunk_length_s: 30, stride_length_s: 5, ...(language ? { language, task: 'transcribe' } : {}) };
     let words: { text: string; start: number; end: number }[] = [];

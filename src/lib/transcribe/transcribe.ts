@@ -3,6 +3,7 @@ import type { Asset, Transcript, WordTiming } from '../../types';
 import { waitForAudio } from '../registry';
 import { callService } from '../ai/service';
 import { cleanWords, encodeWav, toMono16k } from './audioPrep';
+import { guard, hasCrashed, isIOS } from '../crashGuard';
 
 export type Engine = 'on-device' | 'cloud';
 export type Lang = 'auto' | 'en' | 'ms';
@@ -50,7 +51,7 @@ async function onDevice(audio: Float32Array, lang: Lang, model: string, onProgre
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', (ev) => reject(new Error(ev.message || 'Speech model failed to load.')), { once: true });
-    w.postMessage({ id, audio, model, language: lang === 'auto' ? null : LANG_NAME[lang] }, [audio.buffer]);
+    w.postMessage({ id, audio, model, language: lang === 'auto' ? null : LANG_NAME[lang], allowGpu: !isIOS() }, [audio.buffer]);
   });
 }
 
@@ -88,7 +89,13 @@ export async function transcribeAsset(
     const r = await cloud(buf, lang, onProgress);
     return { language: r.language, words: cleanWords(r.words), source: 'cloud', model: 'server', approximateWords: false };
   }
+  if (hasCrashed('transcribe:on-device')) {
+    throw new Error('On-device captions crashed Safari on this device before (not enough memory). Connect your AI server for captions.');
+  }
+  // iPhones have little memory per tab: always use the small model there.
+  const m = isIOS() ? ON_DEVICE_MODELS[1].id : model;
   const audio = await toMono16k(buf);
-  const r = await onDevice(audio, lang, model, onProgress);
+  const r = await guard('transcribe:on-device', () => onDevice(audio, lang, m, onProgress));
+  model = m;
   return { language: lang, words: cleanWords(r.words), source: 'on-device', model, approximateWords: r.approximate };
 }
