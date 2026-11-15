@@ -109,10 +109,11 @@ export async function analyzeProject(project: Project, assets: Record<string, As
     const v = va.get(p.clip.assetId);
     if (!v || v.diff.length < 4) continue;
     const inRange = v.diff.map((d, i) => ({ d, t: v.times[i] })).filter((x) => x.t > p.clip.in + 0.3 && x.t < p.clip.out - 0.3);
-    const vals = v.diff.slice(1);
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-    const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
-    const thr = Math.max(0.12, mean + 4 * sd);
+    // Robust threshold (median + scaled MAD): one big cut can't hide itself by inflating the spread.
+    const vals = v.diff.slice(1).sort((a, b) => a - b);
+    const med = vals[Math.floor(vals.length / 2)];
+    const mad = [...vals.map((x) => Math.abs(x - med))].sort((a, b) => a - b)[Math.floor(vals.length / 2)];
+    const thr = Math.max(0.12, med + 8 * 1.4826 * mad);
     for (const x of inRange) {
       if (x.d < thr) continue;
       const tl = p.start + (x.t - p.clip.in);
