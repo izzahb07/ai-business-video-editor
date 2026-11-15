@@ -1,0 +1,39 @@
+{
+  "name": "ai-business-video-studio",
+  "version": "0.1.0",
+  "description": "iPhone-first AI-powered video editor that runs entirely in Safari",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "e2e": "node tests/e2e/run.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzahb07/ai-business-video-editor.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/izzahb07/ai-business-video-editor/issues"
+  },
+  "homepage": "https://github.com/izzahb07/ai-business-video-editor#readme",
+  "dependencies": {
+    "@mediabunny/aac-encoder": "^1.66.0",
+    "mediabunny": "^1.66.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "playwright-core": "^1.65.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^3.2.7"
+  },
+  "private": true,
+  "type": "module"
+}
