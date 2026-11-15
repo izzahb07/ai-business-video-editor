@@ -506,6 +506,25 @@ async function moduleAuto(browser, { A, importClips }) {
     check(cap === 'failed', `captions step reports a clear failure when the speech model can't download (${cap})`);
     check(sil === 'done' && hookSt === 'done' && /template/.test(hookNote), `other steps still done; hook honestly marked as template (${hookNote.slice(0, 60)}…)`);
     await p2.page.screenshot({ path: path.join(OUT, 'auto-2-no-server.png') });
+
+    // 3) Crash protection: a normal run leaves no crash note…
+    await p2.page.reload();
+    await p2.page.getByTestId('clip-card').first().waitFor({ timeout: 20000 });
+    await p2.page.waitForTimeout(800);
+    check((await p2.page.getByText(/ran out of memory/).count()) === 0, 'no false crash warning after a normal run');
+    // …and if Safari dies during on-device captions, the next start explains it and skips that step.
+    await p2.page.evaluate(() => localStorage.setItem('crashguard-running', JSON.stringify({ task: 'transcribe:on-device', at: Date.now() })));
+    await p2.page.reload();
+    await p2.page.getByText(/ran out of memory during on-device captions/).waitFor({ timeout: 20000 });
+    check(true, 'after a crash, the app explains which step crashed and that the project is safe');
+    await p2.page.getByTestId('undo').waitFor();
+    await p2.page.getByTestId('tab-ai').click();
+    await p2.page.getByTestId('auto-run').click();
+    await p2.page.getByTestId('auto-run').filter({ hasText: 'Auto edit my video' }).waitFor({ timeout: 150000 });
+    const capAfter = await status(p2.page, 'captions');
+    const capNote = await p2.page.getByTestId('auto-step-captions').textContent();
+    check(capAfter === 'skipped' && /crashed Safari before/.test(capNote), `the crashing step is skipped next time, with the reason shown (${capAfter})`);
+    check(['done', 'skipped'].includes(await status(p2.page, 'music')), 'the rest of Auto Edit still runs');
     await p2.ctx.close();
   } finally {
     srv.close();

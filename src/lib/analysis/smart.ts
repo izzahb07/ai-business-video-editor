@@ -76,12 +76,12 @@ function silenceFor(placed: PlacedClip, s: SilenceSettings) {
   return out;
 }
 
-export interface AnalyzeOptions { silence: SilenceSettings; onProgress?: (msg: string, p: number) => void }
+export interface AnalyzeOptions { silence: SilenceSettings; onProgress?: (msg: string, p: number) => void; /** Skip video decoding (low memory). */ audioOnly?: boolean }
 
 export async function analyzeProject(project: Project, assets: Record<string, Asset>, opts: AnalyzeOptions): Promise<Suggestion[]> {
   const placed = layoutClips(project.clips);
   const out: Suggestion[] = [];
-  const videoAssets = [...new Set(project.clips.map((c) => c.assetId))].map((id) => assets[id]).filter((a) => a?.kind === 'video');
+  const videoAssets = opts.audioOnly ? [] : [...new Set(project.clips.map((c) => c.assetId))].map((id) => assets[id]).filter((a) => a?.kind === 'video');
   const va = new Map<string, VideoAnalysis | null>();
   for (let i = 0; i < videoAssets.length; i++) {
     const a = videoAssets[i];

@@ -32,7 +32,8 @@ export function analyzeVideo(asset: Asset, onProgress?: (p: number) => void): Pr
 async function run(asset: Asset, onProgress?: (p: number) => void): Promise<VideoAnalysis | null> {
   const file = getFile(asset.id);
   if (!file || asset.kind !== 'video') return null;
-  const fps = asset.webCodecsDecodable ? 4 : 2;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const fps = asset.webCodecsDecodable && !ios ? 4 : 2;
   const n = Math.max(2, Math.min(asset.webCodecsDecodable ? 2400 : 300, Math.floor(asset.duration * fps)));
   const times = Array.from({ length: n }, (_, i) => Math.min(asset.duration - 0.02, (i + 0.5) * (asset.duration / n)));
   const c = document.createElement('canvas');
