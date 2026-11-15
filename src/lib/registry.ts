@@ -3,7 +3,31 @@
  * original file Blobs, object URLs, decoded audio, and a small pool of <video> elements.
  */
 
+import type { LutData } from '../engine/grade';
+
 const files = new Map<string, Blob>();
+const luts = new Map<string, LutData>();
+const images = new Map<string, ImageBitmap>();
+const imagePending = new Map<string, Promise<ImageBitmap | null>>();
+
+export function setLut(id: string, lut: LutData) { luts.set(id, lut); }
+export function getLut(id: string): LutData | undefined { return luts.get(id); }
+
+/** Decoded image for logo/image overlays (cached). */
+export function getImage(assetId: string): ImageBitmap | undefined { return images.get(assetId); }
+export function loadImage(assetId: string): Promise<ImageBitmap | null> {
+  const have = images.get(assetId);
+  if (have) return Promise.resolve(have);
+  let p = imagePending.get(assetId);
+  if (!p) {
+    const f = files.get(assetId);
+    if (!f) return Promise.resolve(null);
+    p = createImageBitmap(f).then((b) => { images.set(assetId, b); return b; }).catch(() => null);
+    imagePending.set(assetId, p);
+  }
+  return p;
+}
+export function imagesMap(): Map<string, ImageBitmap> { return images; }
 const urls = new Map<string, string>();
 const audio = new Map<string, AudioBuffer | null>();
 const audioPending = new Map<string, Promise<AudioBuffer | null>>();
@@ -44,7 +68,7 @@ export async function waitForAudio(assetId: string): Promise<AudioBuffer | null>
 
 // ---------- <video> element pool (iOS limits how many can be active at once) ----------
 
-const POOL_MAX = 4;
+const POOL_MAX = 6;
 const pool = new Map<string, HTMLVideoElement>(); // insertion order = LRU order
 let host: HTMLDivElement | null = null;
 
@@ -81,17 +105,18 @@ export function destroyVideoElement(v: HTMLVideoElement) {
   v.remove();
 }
 
-export function getPooledVideo(assetId: string): HTMLVideoElement | null {
-  let v = pool.get(assetId);
+/** `key` lets the same file have separate players (e.g. main track + picture-in-picture). */
+export function getPooledVideo(assetId: string, key: string = assetId): HTMLVideoElement | null {
+  let v = pool.get(key);
   if (v) {
-    pool.delete(assetId);
-    pool.set(assetId, v);
+    pool.delete(key);
+    pool.set(key, v);
     return v;
   }
   const src = getUrl(assetId);
   if (!src) return null;
   v = createVideoElement(src);
-  pool.set(assetId, v);
+  pool.set(key, v);
   while (pool.size > POOL_MAX) {
     const [oldId, oldV] = pool.entries().next().value as [string, HTMLVideoElement];
     pool.delete(oldId);
@@ -107,6 +132,10 @@ export function clearRegistry() {
   urls.clear();
   files.clear();
   audio.clear();
+  luts.clear();
+  for (const b of images.values()) b.close?.();
+  images.clear();
+  imagePending.clear();
   audioPending.clear();
 }
 

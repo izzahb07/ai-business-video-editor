@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { newProject, useEditor } from './store';
 import type { Asset } from './types';
 
-const asset = (id: string, d = 4): Asset => ({ id, name: id, size: 1, mime: 'video/mp4', duration: d, width: 1080, height: 1920, codec: 'avc', hasAudio: true, webCodecsDecodable: true, thumb: '', stored: false });
+const asset = (id: string, d = 4): Asset => ({ id, kind: 'video', name: id, size: 1, mime: 'video/mp4', duration: d, width: 1080, height: 1920, codec: 'avc', hasAudio: true, webCodecsDecodable: true, thumb: '', stored: false });
 
 describe('editor store', () => {
   beforeEach(() => useEditor.getState().load(newProject(), {}));
