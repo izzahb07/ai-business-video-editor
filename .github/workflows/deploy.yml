@@ -29,6 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Test AI server code
+        run: cd server && npm ci && npm test
       - run: npm run build
       - name: Check the built site is correct
         run: node scripts/check-dist.mjs

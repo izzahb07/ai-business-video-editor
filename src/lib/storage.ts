@@ -63,6 +63,14 @@ export async function loadState(): Promise<SavedState | undefined> {
   return tx('kv', 'readonly', (s) => s.get('state') as IDBRequest<SavedState | undefined>);
 }
 
+export async function saveLut(id: string, lut: unknown): Promise<void> {
+  await tx('kv', 'readwrite', (s) => s.put(lut, 'lut:' + id));
+}
+
+export async function loadLut<T>(id: string): Promise<T | undefined> {
+  return tx('kv', 'readonly', (s) => s.get('lut:' + id) as IDBRequest<T | undefined>);
+}
+
 export async function clearAll(): Promise<void> {
   await tx('files', 'readwrite', (s) => s.clear());
   await tx('kv', 'readwrite', (s) => s.clear());

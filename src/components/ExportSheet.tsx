@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import type { ExportSettings } from '../types';
 import { estimateFileSize, outputSize, totalDuration, videoBitrate } from '../lib/timeline';
+import { canEncodeVideo } from 'mediabunny';
+import { toSrt } from '../engine/captions';
 import { fmtBytes, fmtTime } from '../lib/capabilities';
 import { ExportCancelled, exportProject, type ExportProgress, type ExportResult } from '../lib/export/exporter';
 import { player } from '../lib/player';
@@ -14,13 +16,26 @@ type State =
   | { kind: 'done'; result: ExportResult; url: string }
   | { kind: 'error'; message: string };
 
-const PREFS_KEY = 'export-settings';
+const PREFS_KEY = 'export-settings-v2';
 function loadPrefs(): ExportSettings {
+  const def: ExportSettings = { resolution: 1080, fps: 30, quality: 'medium', audioBitrate: 192000 };
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '');
-    if (p && p.resolution && p.fps && p.quality) return p;
+    if (p && [720, 1080, 2160].includes(p.resolution) && [24, 25, 30, 60].includes(p.fps) &&
+      ['high', 'medium', 'low'].includes(p.quality) && [128000, 192000, 256000].includes(p.audioBitrate)) return p;
   } catch { /* ignore */ }
-  return { resolution: 1080, fps: 30, quality: 'standard' };
+  return def;
+}
+
+export function downloadText(text: string, name: string, type = 'text/plain') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 /** Above this, iPhone Safari may run out of memory while building the file. */
@@ -42,7 +57,14 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
 
   const duration = totalDuration(project.clips);
   const { width, height } = outputSize(project.settings.aspect, settings.resolution);
-  const est = estimateFileSize(duration, videoBitrate(width, height, settings.fps, settings.quality), true);
+  const est = estimateFileSize(duration, videoBitrate(width, height, settings.fps, settings.quality), settings.audioBitrate);
+  const [can4k, setCan4k] = useState<boolean | null>(null);
+  useEffect(() => {
+    const s4 = outputSize(project.settings.aspect, 2160);
+    canEncodeVideo('avc', { width: s4.width, height: s4.height, bitrate: videoBitrate(s4.width, s4.height, 30, 'medium') })
+      .then(setCan4k).catch(() => setCan4k(false));
+  }, [project.settings.aspect]);
+  const hasCaptions = project.captions.segments.length > 0;
 
   // Release the exported file's memory when the sheet closes.
   useEffect(() => () => {
@@ -103,8 +125,9 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
               value={settings.resolution}
               onChange={(resolution) => setSettings({ resolution })}
               options={[
+                { value: 720, label: '720p', sub: 'Fast · small' },
                 { value: 1080, label: '1080p', sub: 'Best for social' },
-                { value: 720, label: '720p', sub: 'Faster · smaller' },
+                ...(can4k ? [{ value: 2160 as const, label: '4K', sub: 'Large file' }] : []),
               ]}
             />
           </div>
@@ -129,26 +152,51 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
               value={settings.quality}
               onChange={(quality) => setSettings({ quality })}
               options={[
-                { value: 'high', label: 'High' },
-                { value: 'standard', label: 'Standard' },
-                { value: 'small', label: 'Small file' },
+                { value: 'high', label: 'High', sub: 'Bitrate' },
+                { value: 'medium', label: 'Medium', sub: 'Bitrate' },
+                { value: 'low', label: 'Low', sub: 'Bitrate' },
               ]}
             />
           </div>
+          <div className="field">
+            <label>Audio quality (AAC)</label>
+            <Segmented
+              label="Audio quality"
+              value={settings.audioBitrate}
+              onChange={(audioBitrate) => setSettings({ audioBitrate })}
+              options={[
+                { value: 128000, label: '128k' },
+                { value: 192000, label: '192k', sub: 'Recommended' },
+                { value: 256000, label: '256k' },
+              ]}
+            />
+          </div>
+          {can4k === false && <p className="muted small">4K is not available: this browser can't encode 4K H.264.</p>}
           <div className="summary">
             <div><span className="muted">Output</span><b>{width}×{height} · MP4 (H.264 + AAC)</b></div>
             <div><span className="muted">Length</span><b>{fmtTime(duration, true)}</b></div>
-            <div><span className="muted">Estimated size</span><b>≈ {fmtBytes(est)}</b></div>
+            <div><span className="muted">Estimated size</span><b data-testid="est-size">≈ {fmtBytes(est)}</b></div>
+            <div><span className="muted">Included</span><b>{[
+              project.captions.enabled && hasCaptions ? 'captions' : '',
+              project.overlays.length ? `${project.overlays.length} graphic(s)` : '',
+              project.audio.items.length ? `${project.audio.items.length} audio item(s)` : '',
+              project.clips.some((c) => c.transition.type !== 'none') ? 'transitions' : '',
+            ].filter(Boolean).join(', ') || 'clips only'}</b></div>
           </div>
           {est > SIZE_WARN && (
             <p className="notice warn">
-              This is a large file for iPhone Safari's memory. If the export fails, choose 720p or "Small file".
+              This is a large file for iPhone Safari's memory. If the export fails, choose 720p or Low bitrate.
             </p>
           )}
           <p className="notice">Keep Safari open with the screen on while exporting. Everything is processed on your iPhone — nothing is uploaded.</p>
           <button className="primary-btn" onClick={start} disabled={project.clips.length === 0} data-testid="start-export">
             <IconExport /> Export MP4
           </button>
+          {hasCaptions && (
+            <button className="secondary-btn" onClick={() => downloadText(toSrt(project), `${project.name || 'captions'}.srt`, 'application/x-subrip')} data-testid="download-srt">
+              Download subtitles (.srt)
+            </button>
+          )}
         </div>
       )}
 
@@ -159,7 +207,7 @@ export function ExportSheet({ onClose }: { onClose: () => void }) {
       {state.kind === 'error' && (
         <div className="stack">
           <p className="notice error" data-testid="export-error"><b>Export failed.</b> {state.message}</p>
-          <p className="muted small">No file was created. Tips: try 720p, close other apps, and keep Safari in front.</p>
+          <p className="muted small">No file was created. Tips: try 720p or Low bitrate, close other apps, and keep Safari in front.</p>
           <button className="primary-btn" onClick={() => setState({ kind: 'setup' })}>Back to settings</button>
         </div>
       )}
