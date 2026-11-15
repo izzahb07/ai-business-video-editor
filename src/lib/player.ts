@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import type { Asset, Project } from '../types';
-import { getPooledVideo, imagesMap, loadImage, seekVideo } from './registry';
+import { getPooledVideo, imagesMap, loadImage, seekVideo, waitEvent } from './registry';
 import { layoutClips, locate, totalDuration, type PlacedClip } from './timeline';
 import { Renderer } from '../engine/render';
 import { buildAudioGraph, type GraphHandle } from '../engine/audio';
@@ -39,6 +39,22 @@ export function unlockAudio(): AudioContext {
   }
   if (audioCtx.state !== 'running') void audioCtx.resume();
   return audioCtx;
+}
+
+/**
+ * iPhone Safari doesn't decode any frame of a video until it has played once, so a paused
+ * preview stays black. Muted inline playback is always allowed, so play for a moment, then seek.
+ */
+async function primeAndSeek(v: HTMLVideoElement, t: number): Promise<void> {
+  try {
+    if (v.readyState < 2 && v.paused && !v.dataset.primed) {
+      v.dataset.primed = '1';
+      await v.play().catch(() => {});
+      v.pause();
+    }
+    await seekVideo(v, t);
+    if (v.readyState < 2) await waitEvent(v, 'loadeddata', 3000).catch(() => {});
+  } catch { /* draw whatever is available */ }
 }
 
 export class PreviewPlayer {
@@ -159,12 +175,12 @@ export class PreviewPlayer {
       const v = getPooledVideo(loc.placed.clip.assetId);
       if (v) {
         this.setActive(v, loc.placed.clip.id);
-        waits.push(seekVideo(v, loc.sourceTime).catch(() => {}));
+        waits.push(primeAndSeek(v, loc.sourceTime));
       }
     }
     for (const o of this.activePips(this.time)) {
       const v = getPooledVideo(o.assetId!, 'pip:' + o.id);
-      if (v) waits.push(seekVideo(v, (o.in ?? 0) + (this.time - o.start)).catch(() => {}));
+      if (v) waits.push(primeAndSeek(v, (o.in ?? 0) + (this.time - o.start)));
     }
     await Promise.all(waits);
     if (token !== this.seekToken) return;
