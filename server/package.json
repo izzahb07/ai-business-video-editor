@@ -1,0 +1,22 @@
+{
+  "name": "ai-video-studio-server",
+  "private": true,
+  "type": "module",
+  "description": "Optional AI server for AI Business Video Studio (Cloudflare Worker). Holds API keys; the app never sees them.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261115.1",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.162.0"
+  }
+}

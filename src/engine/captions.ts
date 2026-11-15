@@ -47,7 +47,7 @@ function mapSegment(seg: CaptionSegment, clips: Clip[]): { start: number; end: n
     const toTl = (x: number) => p.start + (x - c.in);
     const ws = words
       .map((w, i) => ({ w, i }))
-      .filter(({ w }) => { const mid = (w.start + w.end) / 2; return mid >= c.in && mid < c.out; })
+      .filter(({ w }) => { const mid = (w.start + w.end) / 2; return mid >= s && mid < e; })
       .map(({ w, i }) => ({ text: w.text, start: toTl(Math.max(w.start, c.in)), end: toTl(Math.min(w.end, c.out)), emph: emph.has(i) }));
     if (ws.length) out.push({ start: toTl(s), end: toTl(e), words: ws });
   }
@@ -75,8 +75,11 @@ export function resolveCaptions(project: Project): CaptionCard[] {
     }
   }
   cards.sort((a, b) => a.start - b.start);
-  // Avoid overlaps: a card ends when the next begins.
-  for (let i = 0; i < cards.length - 1; i++) cards[i].end = Math.min(cards[i].end, cards[i + 1].start);
+  // Avoid overlaps, and bridge short pauses (< 0.7 s) so captions don't flicker off between phrases.
+  for (let i = 0; i < cards.length - 1; i++) {
+    const next = cards[i + 1].start;
+    cards[i].end = next - cards[i].end < 0.7 ? next : Math.min(cards[i].end, next);
+  }
   cacheKey = [captions, clips, maxWords];
   cacheVal = cards.filter((c) => c.end > c.start);
   return cacheVal;
