@@ -1,7 +1,7 @@
 // Studio module tests (captions, colour, graphics, audio, AI). Imported by studio.mjs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, decodesClean, exportAndDownload, ff, fixture, isWhite, lum, newPage, OUT, pixel, probe, region, regionStats, rms, seekTo, setRange } from './lib.mjs';
+import { check, decodesClean, exportAndDownload, ff, fixture, isWhite, lum, newPage, OUT, pixel, probe, region, regionStats, rms, rmsFiltered, seekTo, setRange } from './lib.mjs';
 import { startAiServer } from './mockServer.mjs';
 
 async function download(page, trigger, name) {
@@ -236,4 +236,56 @@ async function moduleGraphics(browser, { A, C, importClips }) {
   }
 }
 
-export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics };
+// ------------------------------------------------------------------ Module 5: audio
+async function moduleAudio(browser, { A, C, importClips }) {
+  console.log('\n▶ Module 5: music, sound effects, ducking, fades, event-matched SFX, import');
+  const F = fixture('F_music_300hz.m4a', (p) => ff('-f', 'lavfi', '-i', 'sine=frequency=300:duration=4', '-c:a', 'aac', p));
+  const { ctx, page, errors } = await newPage(browser);
+  try {
+    await importClips(page, [A, C, C]); // 3 s "speech" (440 Hz) + 4 s silence = 7 s
+    await page.getByTestId('tab-audio').click();
+    await page.getByTestId('add-sound-pad').click();
+    await page.getByTestId('audio-panel').waitFor({ timeout: 15000 });
+    check(await page.getByTestId('audio-duck').isChecked(), 'music ducking is on by default');
+    await page.getByText('Done').click();
+    await seekTo(page, 4.0);
+    await page.getByTestId('add-sound-impact').click();
+    await page.getByTestId('audio-panel').waitFor({ timeout: 15000 });
+    await page.getByText('Done').click();
+
+    let bars = await page.getByTestId('audio-bar').count();
+    await page.getByTestId('whoosh-cuts').click();
+    await page.waitForTimeout(1500);
+    const afterWhoosh = await page.getByTestId('audio-bar').count();
+    check(afterWhoosh === bars + 2, `whoosh placed on each of the 2 cuts (${afterWhoosh - bars})`);
+    await page.getByTestId('undo').click();
+    await page.waitForTimeout(200);
+
+    const ch = page.waitForEvent('filechooser');
+    await page.getByTestId('import-music').click();
+    await (await ch).setFiles(F);
+    await page.getByTestId('audio-panel').waitFor({ timeout: 15000 });
+    check((await page.getByTestId('audio-bar').count()) === bars + 1, 'imported music appears on the music track');
+    await page.getByTestId('delete-audio').click();
+    bars = await page.getByTestId('audio-bar').count();
+    check(bars === 2, `music + impact remain (${bars})`);
+    await page.screenshot({ path: path.join(OUT, 'm5-audio.png') });
+
+    const file = await exportAndDownload(page, 'm5-audio', { Resolution: '720p' });
+    check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+    const notch = 'bandreject=f=440:width_type=q:w=12,bandreject=f=440:width_type=q:w=12';
+    const ducked = rmsFiltered(file, 0.6, 2.4, notch), open = rmsFiltered(file, 3.45, 3.95, notch);
+    check(open > -40, `music is audible in the export (${open.toFixed(1)} dB)`);
+    check(open - ducked > 8, `music ducks under speech (${ducked.toFixed(1)} dB while speaking vs ${open.toFixed(1)} dB)`);
+    const hit = rms(file, 4.0, 4.3);
+    check(hit > open + 6, `impact sound effect at 4.0 s (${hit.toFixed(1)} dB vs music ${open.toFixed(1)} dB)`);
+    const end = rmsFiltered(file, 6.8, 6.98, notch);
+    check(end < open - 12, `music fades out at the end (${end.toFixed(1)} dB)`);
+    const speech = rmsFiltered(file, 0.6, 2.4, 'bandpass=f=440:width_type=q:w=12');
+    check(speech > ducked, `speech stays on top of the music (${speech.toFixed(1)} dB vs ${ducked.toFixed(1)} dB)`);
+  } finally {
+    await ctx.close();
+  }
+}
+
+export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio };

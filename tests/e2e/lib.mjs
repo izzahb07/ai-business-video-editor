@@ -163,3 +163,11 @@ export function regionStats(file, t, x, y, w, h) {
   };
 }
 export const isWhite = ([r, g, b]) => r > 225 && g > 225 && b > 225;
+
+/** RMS (dB) after an ffmpeg audio filter, e.g. to notch out a test tone. */
+export function rmsFiltered(file, from, to, filter) {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-ss', String(from), '-t', String(to - from), '-i', file, '-vn',
+    '-af', `${filter},astats=measure_overall=RMS_level:measure_perchannel=none`, '-f', 'null', '-']);
+  const m = r.stderr.toString().match(/RMS level dB:\s*(-?[\d.]+|-inf)/);
+  return m ? (m[1] === '-inf' ? -Infinity : parseFloat(m[1])) : NaN;
+}

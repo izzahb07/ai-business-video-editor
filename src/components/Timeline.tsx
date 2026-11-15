@@ -194,7 +194,8 @@ export function Timeline() {
               <span className="tl-label">Music · SFX</span>
               {audioBars.map((b) => (
                 <ItemBar key={b.id} kind="audio" id={b.id} label={b.label} start={b.start} end={b.end} lane={b.lane} pps={pps} offset={half}
-                  cls={b.kind === 'music' ? 'bar-music' : 'bar-sfx'} selected={isSel('audio', b.id)} />
+                  cls={b.kind === 'music' ? 'bar-music' : 'bar-sfx'} selected={isSel('audio', b.id)}
+                  wave={project.audio.items.find((i) => i.id === b.id)} />
               ))}
             </div>
           )}
@@ -333,10 +334,20 @@ function ClipWave({ clip, left, width }: { clip: Clip; left: number; width: numb
   return <canvas ref={ref} className="tl-wave" style={{ left, width: Math.max(6, width) }} aria-hidden />;
 }
 
-function ItemBar({ kind, id, label, start, end, lane, pps, offset, cls, selected }: {
+function ItemBar({ kind, id, label, start, end, lane, pps, offset, cls, selected, wave }: {
   kind: 'overlay' | 'audio'; id: string; label: string; start: number; end: number; lane: number; pps: number; offset: number;
-  cls: string; selected: boolean;
+  cls: string; selected: boolean; wave?: { assetId: string; in: number; length: number; loop: boolean };
 }) {
+  const waveRef = useRef<HTMLCanvasElement>(null);
+  const width = Math.max(8, (end - start) * pps);
+  useEffect(() => {
+    const c = waveRef.current;
+    const buf = wave ? getAudio(wave.assetId) : null;
+    if (!c || !buf || !wave) return;
+    c.width = Math.max(2, Math.min(4096, Math.round(width)));
+    c.height = 26;
+    drawWaveform(c, analyzeBuffer(buf).peaks, HOP, wave.in, wave.in + Math.min(wave.length, buf.duration - wave.in), 'rgba(255,255,255,0.35)');
+  }, [wave?.assetId, wave?.in, wave?.length, width]); // eslint-disable-line react-hooks/exhaustive-deps
   const { setSelection, checkpoint, patchOverlay, patchAudioItem } = useEditor.getState();
   const patch = (p: { start?: number; length?: number }, hist: boolean) => {
     if (kind === 'overlay') patchOverlay(id, { ...(p.start != null ? { start: p.start } : {}), ...(p.length != null ? { duration: p.length } : {}) }, { history: hist });
@@ -378,6 +389,7 @@ function ItemBar({ kind, id, label, start, end, lane, pps, offset, cls, selected
       aria-pressed={selected}
       data-testid={`${kind}-bar`}
     >
+      {wave && <canvas ref={waveRef} className="bar-wave" aria-hidden />}
       <span>{label}</span>
       {selected && (
         <>
