@@ -49,6 +49,10 @@ See [ROADMAP.md](ROADMAP.md) for what's coming (trim/split, captions, colour gra
 
 Every later merge into `main` re-runs the tests and redeploys automatically.
 
+> ⚠️ **Only one workflow should publish the site:** `.github/workflows/deploy.yml` ("Build and deploy video editor to GitHub Pages").
+> Do **not** add GitHub's suggested "Jekyll" or "Static HTML" Pages workflows. They publish the raw source code instead of the built app, and the site shows a blank page.
+> If the site is ever blank: open **Actions**, select "Build and deploy video editor to GitHub Pages", tap **Run workflow** on `main`.
+
 ---
 
 ## For developers

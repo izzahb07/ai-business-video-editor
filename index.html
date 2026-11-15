@@ -9,13 +9,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Video Studio" />
     <meta name="description" content="AI Business Video Studio — edit and export professional videos on your iPhone." />
-    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>AI Business Video Studio</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0b0f;color:#9a9aab;font:16px -apple-system,system-ui,sans-serif;text-align:center;padding:24px">
+        Loading Video Studio…
+      </div>
+    </div>
+    <noscript><p style="color:#fff;text-align:center">Please enable JavaScript in Safari to use Video Studio.</p></noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
