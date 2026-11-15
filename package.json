@@ -1,13 +1,16 @@
 {
   "name": "ai-business-video-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "iPhone-first AI-powered video editor that runs entirely in Safari",
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "e2e": "node tests/e2e/run.mjs"
+    "e2e": "node tests/e2e/run.mjs && node tests/e2e/studio.mjs",
+    "e2e:phase1": "node tests/e2e/run.mjs",
+    "e2e:studio": "node tests/e2e/studio.mjs",
+    "screens": "node tests/e2e/screens.mjs"
   },
   "repository": {
     "type": "git",

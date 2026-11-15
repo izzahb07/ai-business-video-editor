@@ -375,4 +375,77 @@ async function moduleAI(browser, { A, importClips }) {
   }
 }
 
-export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio, ai: moduleAI };
+// ------------------------------------------------------------------ Module 7: export options + autosave of everything
+async function moduleExport(browser, { A, C, importClips }) {
+  console.log('\n▶ Module 7: export settings (fps, bitrate, audio quality, 4K), autosave & restore of all edits');
+  const { ctx, page, errors } = await newPage(browser);
+  try {
+    await importClips(page, [A, C]);
+    // Make one edit of every kind.
+    await page.getByTestId('tab-text').click();
+    await page.getByTestId('add-title').click();
+    await page.getByText('Done').click();
+    await page.getByTestId('tab-captions').click();
+    await page.getByTestId('add-caption').click();
+    await page.getByTestId('tab-audio').click();
+    await page.getByTestId('add-sound-pulse').click();
+    await page.getByTestId('audio-panel').waitFor({ timeout: 15000 });
+    await page.getByText('Done').click();
+    await page.getByTestId('tab-color').click();
+    await page.getByTestId('clip-card').nth(0).click();
+    await page.getByTestId('tab-color').click();
+    await page.getByTestId('preset-film-look').click();
+    await page.getByTestId('tab-edit').click();
+    await page.getByTestId('clip-card').nth(1).click();
+    await page.getByRole('radio', { name: 'Zoom punch' }).click();
+    await page.waitForTimeout(1200); // autosave
+
+    await page.reload();
+    await page.getByTestId('clip-card').nth(1).waitFor({ timeout: 20000 });
+    await page.waitForTimeout(1500);
+    check((await page.getByTestId('overlay-bar').count()) === 1, 'title graphic restored after reload');
+    check((await page.getByTestId('caption-bar').count()) === 1, 'caption restored after reload');
+    check((await page.getByTestId('audio-bar').count()) === 1, 'music restored after reload');
+    await page.getByTestId('clip-card').nth(0).click();
+    await page.getByTestId('tab-color').click();
+    check(await page.getByTestId('preset-film-look').evaluate((el) => el.classList.contains('on')), 'colour grade restored after reload');
+    await page.getByTestId('clip-card').nth(1).click();
+    await page.getByTestId('tab-edit').click();
+    check(await page.getByRole('radio', { name: 'Zoom punch' }).getAttribute('aria-checked') === 'true', 'transition restored after reload');
+
+    // Estimated size reacts to settings.
+    await page.getByTestId('open-export').click();
+    const est = async () => (await page.getByTestId('est-size').textContent()).trim();
+    await page.getByRole('radiogroup', { name: 'Quality' }).getByRole('radio', { name: /^Low/ }).click();
+    const low = await est();
+    await page.getByRole('radiogroup', { name: 'Quality' }).getByRole('radio', { name: /^High/ }).click();
+    const high = await est();
+    check(parseFloat(high.replace(/[^\d.]/g, '')) > parseFloat(low.replace(/[^\d.]/g, '')) * 2, `estimated size follows bitrate (${low} → ${high})`);
+    const has4k = await page.getByRole('radiogroup', { name: 'Resolution' }).getByRole('radio', { name: /^4K/ }).count();
+    await page.getByLabel('Close').click();
+    console.log(`    4K option offered by this browser: ${has4k ? 'yes' : 'no'}`);
+
+    const f60 = await exportAndDownload(page, 'm7-1080p60', { Resolution: '1080p', 'Frame rate': '60', Quality: 'High', 'Audio quality': '256k' });
+    const i60 = probe(f60);
+    const v = i60.streams.find((s) => s.codec_type === 'video'), a = i60.streams.find((s) => s.codec_type === 'audio');
+    check(v.avg_frame_rate === '60/1' && v.width === 1080 && v.height === 1920, `1080p 60 fps export (${v.width}x${v.height} @ ${v.avg_frame_rate})`);
+    check(Math.abs(parseInt(a.bit_rate, 10) - 256000) < 40000, `256 kbps AAC audio (${Math.round(a.bit_rate / 1000)} kbps)`);
+    const vbr = parseInt(v.bit_rate, 10);
+    check(vbr > 6e6, `high bitrate video (${(vbr / 1e6).toFixed(1)} Mbps)`);
+    check(decodesClean(f60), '60 fps file decodes with zero errors');
+
+    const f24 = await exportAndDownload(page, 'm7-720p24', { Resolution: '720p', 'Frame rate': '24', Quality: 'Low', 'Audio quality': '128k' });
+    const v24 = probe(f24).streams.find((s) => s.codec_type === 'video');
+    check(v24.avg_frame_rate === '24/1' && v24.width === 720, `720p 24 fps export (${v24.width}x${v24.height} @ ${v24.avg_frame_rate})`);
+    if (has4k) {
+      const f4k = await exportAndDownload(page, 'm7-4k', { Resolution: '4K', 'Frame rate': '24', Quality: 'Medium' });
+      const v4 = probe(f4k).streams.find((s) => s.codec_type === 'video');
+      check(v4.width === 2160 && v4.height === 3840, `4K export (${v4.width}x${v4.height})`);
+    }
+    check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  } finally {
+    await ctx.close();
+  }
+}
+
+export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio, ai: moduleAI, export: moduleExport };

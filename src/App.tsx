@@ -9,7 +9,7 @@ import { EditPanel } from './components/EditPanel';
 import { ExportSheet } from './components/ExportSheet';
 import { InfoSheet } from './components/InfoSheet';
 import { Toasts } from './components/Toast';
-import { IconExport, IconFilm, IconInfo, IconRedo, IconUndo } from './components/Icons';
+import { IconExport, IconFilm, IconInfo, IconRedo, IconUndo, TabAI, TabAudio, TabCaptions, TabColor, TabEdit, TabFormat, TabText } from './components/Icons';
 import { TAB_PANELS } from './components/tabs';
 
 export function App() {
@@ -19,6 +19,7 @@ export function App() {
   const canRedo = useEditor((s) => s.future.length > 0);
   const { undo, redo } = useEditor.getState();
   const [sheet, setSheet] = useState<'export' | 'info' | null>(null);
+  const expanded = useUi((s) => s.expanded);
 
   // Keyboard shortcuts on desktop.
   useEffect(() => {
@@ -50,7 +51,7 @@ export function App() {
       ) : clipsCount === 0 ? (
         <EmptyState />
       ) : (
-        <main className="studio">
+        <main className={`studio${expanded ? ' expanded' : ''}`}>
           <div className="stage-col"><Preview /></div>
           <div className="edit-col">
             <Timeline />
@@ -79,13 +80,18 @@ function ToolArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
   const panels: Partial<Record<Tab, ReactNode>> = { edit: <EditPanel />, format: <FormatPanel />, ...TAB_PANELS };
+  const expanded = useUi((s) => s.expanded);
+  const setExpanded = useUi((s) => s.setExpanded);
   return (
     <>
+      <button className="panel-grabber" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} data-testid="panel-grabber">
+        <span aria-hidden className="grab-bar" />{expanded ? 'Show timeline' : 'More space'}
+      </button>
       <div className="panel-area" data-testid={`panel-${tab}`}>{panels[tab] ?? <EditPanel />}</div>
       <nav className="tabbar" aria-label="Editing tools">
         {TABS.filter((t) => t.id in panels).map((t) => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} aria-pressed={tab === t.id} data-testid={`tab-${t.id}`}>
-            <span className="tab-icon" aria-hidden>{t.icon}</span>
+            <t.icon width={21} height={21} className="tab-icon" />
             <span>{t.label}</span>
           </button>
         ))}
@@ -94,14 +100,14 @@ function ToolArea() {
   );
 }
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'edit', label: 'Edit', icon: '✂︎' },
-  { id: 'captions', label: 'Captions', icon: 'CC' },
-  { id: 'text', label: 'Graphics', icon: 'T' },
-  { id: 'color', label: 'Color', icon: '◐' },
-  { id: 'audio', label: 'Audio', icon: '♪' },
-  { id: 'ai', label: 'AI', icon: '✦' },
-  { id: 'format', label: 'Format', icon: '▭' },
+const TABS: { id: Tab; label: string; icon: typeof TabEdit }[] = [
+  { id: 'edit', label: 'Edit', icon: TabEdit },
+  { id: 'captions', label: 'Captions', icon: TabCaptions },
+  { id: 'text', label: 'Graphics', icon: TabText },
+  { id: 'color', label: 'Colour', icon: TabColor },
+  { id: 'audio', label: 'Audio', icon: TabAudio },
+  { id: 'ai', label: 'AI', icon: TabAI },
+  { id: 'format', label: 'Format', icon: TabFormat },
 ];
 
 function EmptyState() {

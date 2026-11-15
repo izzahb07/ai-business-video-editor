@@ -8,6 +8,9 @@ interface UiState {
   /** Before/after split position for colour grading, or null when off. */
   compare: number | null;
   setCompare: (c: number | null) => void;
+  /** Phone layout: give the tool panel more room by hiding the timeline. */
+  expanded: boolean;
+  setExpanded: (v: boolean) => void;
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -15,4 +18,6 @@ export const useUi = create<UiState>((set) => ({
   setTab: (tab) => set({ tab }),
   compare: null,
   setCompare: (compare) => set({ compare }),
+  expanded: false,
+  setExpanded: (expanded) => set({ expanded }),
 }));
