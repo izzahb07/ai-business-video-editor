@@ -87,7 +87,7 @@ function freq(file, from, dur) {
 async function startServer() {
   const proc = spawn('npx', ['vite', 'preview', '--port', '4180', '--strictPort'], { cwd: ROOT, stdio: 'pipe' });
   for (let i = 0; i < 50; i++) {
-    try { const r = await fetch('http://localhost:4180/'); if (r.ok) return proc; } catch { /* wait */ }
+    try { const r = await fetch('http://localhost:4180/ai-business-video-editor/'); if (r.ok) return proc; } catch { /* wait */ }
     await new Promise((r) => setTimeout(r, 200));
   }
   proc.kill();
@@ -103,7 +103,7 @@ async function runFlow(browser, files, { query = '', label, checkPersistence = f
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto(`http://localhost:4180/${query}`);
+  await page.goto(`http://localhost:4180/ai-business-video-editor/${query}`);
   await page.getByTestId('import-first').waitFor();
   await page.screenshot({ path: path.join(OUT, `${label}-0-empty.png`) });
 
