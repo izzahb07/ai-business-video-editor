@@ -14,12 +14,13 @@ export function isOverlayActive(o: Overlay, t: number) {
   return t >= o.start && t < o.start + o.duration;
 }
 
-function interpKeyframes(o: Overlay, local: number): Omit<Keyframe, 't'> {
+export function interpKeyframes(o: Overlay, local: number): Omit<Keyframe, 't'> {
   const base = { x: o.x, y: o.y, scale: o.scale, rotation: o.rotation, opacity: o.opacity };
   const kf = [...o.keyframes].sort((a, b) => a.t - b.t);
   if (kf.length === 0) return base;
-  if (local <= kf[0].t) return kf[0];
-  if (local >= kf[kf.length - 1].t) return kf[kf.length - 1];
+  const strip = ({ x, y, scale, rotation, opacity }: Keyframe) => ({ x, y, scale, rotation, opacity });
+  if (local <= kf[0].t) return strip(kf[0]);
+  if (local >= kf[kf.length - 1].t) return strip(kf[kf.length - 1]);
   for (let i = 0; i < kf.length - 1; i++) {
     const a = kf[i], b = kf[i + 1];
     if (local >= a.t && local <= b.t) {

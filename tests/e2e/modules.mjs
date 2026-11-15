@@ -1,7 +1,7 @@
 // Studio module tests (captions, colour, graphics, audio, AI). Imported by studio.mjs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, decodesClean, exportAndDownload, lum, newPage, OUT, pixel, probe, region, rms, seekTo, setRange } from './lib.mjs';
+import { check, decodesClean, exportAndDownload, ff, fixture, isWhite, lum, newPage, OUT, pixel, probe, region, regionStats, rms, seekTo, setRange } from './lib.mjs';
 import { startAiServer } from './mockServer.mjs';
 
 async function download(page, trigger, name) {
@@ -160,4 +160,80 @@ async function moduleColor(browser, { A, B, C, importClips }) {
   }
 }
 
-export const MODULES = { captions: moduleCaptions, color: moduleColor };
+// ------------------------------------------------------------------ Module 4: motion graphics
+async function moduleGraphics(browser, { A, C, importClips }) {
+  console.log('\n▶ Module 4: animated text, keyframes, shapes, logo, picture-in-picture, templates');
+  const logo = fixture('E_logo_green.png', (p) => ff('-f', 'lavfi', '-i', 'color=c=0x00ff00:size=200x200', '-frames:v', '1', p));
+  const { ctx, page, errors } = await newPage(browser);
+  const pick = async (testId, file) => {
+    const ch = page.waitForEvent('filechooser');
+    await page.getByTestId(testId).click();
+    await (await ch).setFiles(file);
+  };
+  try {
+    await importClips(page, [C, C]);
+    await page.getByTestId('tab-text').click();
+    await page.getByTestId('add-hook').click();
+    await page.getByTestId('overlay-panel').waitFor();
+    await page.getByText('Done').click();
+
+    // Keyframed text: moves from left (x=20%) to right (x=80%).
+    await seekTo(page, 0);
+    await page.getByTestId('add-text').click();
+    await page.getByTestId('overlay-text').fill('MOVE');
+    await setRange(page, 'overlay-y', 70);
+    await page.getByTestId('enable-keyframes').click();
+    await setRange(page, 'overlay-x', 20);
+    await seekTo(page, 2.5);
+    await setRange(page, 'overlay-x', 80);
+    const kfCount = await page.getByRole('button', { name: /^◆/ }).count();
+    check(kfCount === 2, `two keyframes created (${kfCount})`);
+    await page.screenshot({ path: path.join(OUT, 'm4-inspector.png') });
+    await page.getByText('Done').click();
+
+    await seekTo(page, 2.0);
+    await page.getByTestId('add-circle').click();
+    await page.getByText('Done').click();
+    await pick('add-logo', logo);
+    await page.getByTestId('overlay-panel').waitFor();
+    await page.getByText('Done').click();
+    await seekTo(page, 2.0);
+    await pick('add-pip', A);
+    await page.getByTestId('overlay-panel').waitFor();
+    await setRange(page, 'overlay-y', 85);
+    await page.getByText('Done').click();
+    await page.getByTestId('add-intro').click();
+    await page.getByText('Done').click();
+    const bars = await page.getByTestId('overlay-bar').count();
+    check(bars === 7, `graphics on the timeline: hook, text, circle, logo, PiP, intro title + subtitle (${bars})`);
+    // Remove the intro (2 items) via undo to keep pixels below clean.
+    await page.getByTestId('undo').click();
+    await seekTo(page, 1.0);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(OUT, 'm4-preview.png') });
+
+    const file = await exportAndDownload(page, 'm4-graphics');
+    check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+
+    const hookAt = (t) => regionStats(file, t, 60, 470, 460, 220).frac(isWhite);
+    const h1 = hookAt(1.0), h0 = hookAt(0.04), h4 = hookAt(3.5);
+    check(h1 > 0.04 && h4 < 0.005, `hook text visible 0–3 s, gone after (${(h1 * 100).toFixed(1)}% → ${(h4 * 100).toFixed(1)}%)`);
+    check(h0 < h1 * 0.6, `hook pops in (first frame ${(h0 * 100).toFixed(1)}% vs ${(h1 * 100).toFixed(1)}%)`);
+    const cx = (t) => regionStats(file, t, 0, 1264, 1080, 160).centroidX(isWhite);
+    const x0 = cx(0.5), x1 = cx(2.45);
+    check(x0 < 420 && x1 > 660, `keyframes move the text left → right (centre x ${x0.toFixed(0)} → ${x1.toFixed(0)})`);
+    const reddish = ([r, g, b]) => r > 180 && g < 120 && b < 140;
+    const ring = regionStats(file, 3.2, 300, 720, 480, 480).frac(reddish), ringEarly = regionStats(file, 1.5, 300, 720, 480, 480).frac(reddish);
+    check(ring > 0.01 && ringEarly === 0, `circle appears at 2 s and not before (${(ringEarly * 100).toFixed(2)}% → ${(ring * 100).toFixed(2)}% red)`);
+    const lg = pixel(file, 1.0, 907, 154);
+    check(lg[1] > 200 && lg[0] < 60 && lg[2] < 60, `logo shown top-right (${lg})`);
+    const notBlue = ([r, g, b]) => !(b > 200 && r < 60 && g < 60);
+    const pip0 = regionStats(file, 1.0, 600, 1560, 340, 150).frac(notBlue), pip1 = regionStats(file, 3.2, 600, 1560, 340, 150).frac(notBlue);
+    check(pip0 < 0.01 && pip1 > 0.5, `picture-in-picture video appears at 2 s (${(pip0 * 100).toFixed(1)}% → ${(pip1 * 100).toFixed(1)}% video pixels)`);
+    check(decodesClean(file), 'file decodes with zero errors');
+  } finally {
+    await ctx.close();
+  }
+}
+
+export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics };

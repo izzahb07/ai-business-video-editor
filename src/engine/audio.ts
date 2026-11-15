@@ -217,6 +217,25 @@ export function buildAudioGraph(
     nodes.push(src);
   }
 
+  // ---- Picture-in-picture video sound (when not muted) ----
+  for (const o of project.overlays) {
+    if (o.kind !== 'video' || !o.assetId || o.muted || (o.volume ?? 1) <= 0) continue;
+    const buf = getAudio(o.assetId);
+    const s = o.start, e = o.start + o.duration;
+    if (!buf || e <= t0 || s >= t1) continue;
+    const a = Math.max(s, t0), b = Math.min(e, t1);
+    const offset = (o.in ?? 0) + (a - s);
+    if (offset >= buf.duration) continue;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    const f = Math.min(0.05, o.duration / 4), v = o.volume ?? 1;
+    applyEnv(g.gain, [[s, 0], [s + f, v], [e - f, v], [e, 0]], a, b, toCtx);
+    src.connect(g).connect(dest);
+    src.start(toCtx(a), offset, Math.min(b - a, buf.duration - offset));
+    nodes.push(src);
+  }
+
   // ---- Music & sound effects ----
   const needsDuck = project.audio.items.some((i) => i.duck);
   const speech = needsDuck ? timelineSpeech(project.clips) : [];

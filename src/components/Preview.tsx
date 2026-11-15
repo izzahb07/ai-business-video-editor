@@ -5,6 +5,7 @@ import { aspectValue, totalDuration } from '../lib/timeline';
 import { fmtTime } from '../lib/capabilities';
 import { useUi } from '../uiState';
 import { IconPause, IconPlay } from './Icons';
+import { editTransform, transformAt } from '../lib/overlayEdit';
 
 export function Preview() {
   const project = useEditor((s) => s.project);
@@ -66,13 +67,14 @@ export function Preview() {
     const tg = target();
     if (pts.current.size === 2 && tg?.kind === 'overlay') {
       const [a, b] = [...pts.current.values()];
-      gesture.current = { ...(gesture.current ?? { x0: 0, y0: 0, ox: 0, oy: 0 }), moved: true, d0: Math.hypot(a.x - b.x, a.y - b.y), s0: tg.o.scale };
+      gesture.current = { ...(gesture.current ?? { x0: 0, y0: 0, ox: 0, oy: 0 }), moved: true, d0: Math.hypot(a.x - b.x, a.y - b.y), s0: transformAt(tg.o, player.getTime()).scale };
       return;
     }
     const st = useEditor.getState();
     if (tg) st.checkpoint();
-    const ox = tg?.kind === 'overlay' ? tg.o.x : 0.5;
-    const oy = tg?.kind === 'overlay' ? tg.o.y : st.project.captions.style.y;
+    const cur = tg?.kind === 'overlay' ? transformAt(tg.o, player.getTime()) : null;
+    const ox = cur ? cur.x : 0.5;
+    const oy = cur ? cur.y : st.project.captions.style.y;
     gesture.current = { x0: e.clientX, y0: e.clientY, ox, oy, moved: false };
   };
   const onMove = (e: React.PointerEvent) => {
@@ -84,13 +86,13 @@ export function Preview() {
     const st = useEditor.getState();
     if (pts.current.size === 2 && g.d0 && tg.kind === 'overlay') {
       const [a, b] = [...pts.current.values()];
-      st.patchOverlay(tg.o.id, { scale: Math.max(0.1, Math.min(6, (g.s0 ?? 1) * Math.hypot(a.x - b.x, a.y - b.y) / g.d0)) }, { history: false });
+      st.patchOverlay(tg.o.id, editTransform(tg.o, { scale: Math.max(0.1, Math.min(6, (g.s0 ?? 1) * Math.hypot(a.x - b.x, a.y - b.y) / g.d0)) }, player.getTime()), { history: false });
       return;
     }
     const dx = (e.clientX - g.x0) / box.w, dy = (e.clientY - g.y0) / box.h;
     if (Math.abs(dx) + Math.abs(dy) > 0.01) g.moved = true;
     if (!g.moved) return;
-    if (tg.kind === 'overlay') st.patchOverlay(tg.o.id, { x: g.ox + dx, y: g.oy + dy }, { history: false });
+    if (tg.kind === 'overlay') st.patchOverlay(tg.o.id, editTransform(tg.o, { x: g.ox + dx, y: g.oy + dy }, player.getTime()), { history: false });
     else st.setCaptions({ style: { ...st.project.captions.style, y: Math.max(0.05, Math.min(0.95, g.oy + dy)) } }, { history: false });
   };
   const onUp = (e: React.PointerEvent) => {
@@ -102,7 +104,7 @@ export function Preview() {
   };
 
   const empty = project.clips.length === 0;
-  const dragHint = selection?.type === 'overlay' ? 'Drag to move · pinch to resize' : selection?.type === 'caption' ? 'Drag up/down to move captions' : null;
+  const dragHint = selection?.type === 'overlay' ? 'Drag to move · pinch to size' : selection?.type === 'caption' ? 'Drag to move captions' : null;
 
   return (
     <section className="preview">

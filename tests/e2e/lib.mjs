@@ -150,3 +150,16 @@ export async function newPage(browser, query = '') {
   await page.goto(BASE + query);
   return { ctx, page, errors };
 }
+
+/** Raw RGB of a region → { frac(pred), centroidX(pred) }. */
+export function regionStats(file, t, x, y, w, h) {
+  const buf = execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', String(t), '-i', file, '-frames:v', '1',
+    '-vf', `scale=iw:ih,crop=${w}:${h}:${x}:${y}`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+  const px = (i) => [buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2]];
+  const n = buf.length / 3;
+  return {
+    frac(pred) { let c = 0; for (let i = 0; i < n; i++) if (pred(px(i))) c++; return c / n; },
+    centroidX(pred) { let s = 0, c = 0; for (let i = 0; i < n; i++) if (pred(px(i))) { s += x + (i % w); c++; } return c ? s / c : NaN; },
+  };
+}
+export const isWhite = ([r, g, b]) => r > 225 && g > 225 && b > 225;
