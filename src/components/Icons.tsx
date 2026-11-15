@@ -21,11 +21,3 @@ export const IconVolume = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><pa
 export const IconMute = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M11 5 6 9H3v6h3l5 4z" /><path d="m16 9 5 6M21 9l-5 6" /></svg>);
 export const IconClose = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M6 6l12 12M18 6 6 18" /></svg>);
 export const IconCheck = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="m5 12 5 5 9-10" /></svg>);
-
-export const TabEdit = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" /></svg>);
-export const TabCaptions = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><rect x="2.5" y="5" width="19" height="14" rx="3" /><path d="M10 10.2a2.2 2.2 0 1 0 0 3.6M17 10.2a2.2 2.2 0 1 0 0 3.6" /></svg>);
-export const TabText = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M5 6V4h14v2M12 4v16M9 20h6" /></svg>);
-export const TabColor = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" /></svg>);
-export const TabAudio = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></svg>);
-export const TabAI = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></svg>);
-export const TabFormat = (p: SVGProps<SVGSVGElement>) => (<svg {...base(p)}><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M3 8v8M21 8v8" /></svg>);

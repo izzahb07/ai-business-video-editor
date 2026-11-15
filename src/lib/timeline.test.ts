@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { estimateFileSize, layoutClips, locate, outputSize, totalDuration, videoBitrate } from './timeline';
 import type { Clip } from '../types';
 
-import { newClip } from './defaults';
-const clip = (id: string, inP: number, out: number): Clip => ({ ...newClip({ id: 'a' + id, duration: out } as never), id, in: inP, out });
+const clip = (id: string, inP: number, out: number): Clip => ({ id, assetId: 'a' + id, in: inP, out, volume: 1, muted: false, fit: 'fill' });
 
 describe('timeline', () => {
   const clips = [clip('1', 0, 3), clip('2', 1, 3), clip('3', 0.5, 2.5)];
@@ -31,10 +30,9 @@ describe('timeline', () => {
     expect(outputSize('9:16', 720)).toEqual({ width: 720, height: 1280 });
   });
   it('scales bitrate and estimates size', () => {
-    expect(videoBitrate(1080, 1920, 30, 'medium')).toBe(8_000_000);
-    expect(videoBitrate(720, 1280, 30, 'medium')).toBeLessThan(4_000_000);
+    expect(videoBitrate(1080, 1920, 30, 'standard')).toBe(8_000_000);
+    expect(videoBitrate(720, 1280, 30, 'standard')).toBeLessThan(4_000_000);
     expect(videoBitrate(1080, 1920, 60, 'high')).toBeGreaterThan(12_000_000);
-    expect(estimateFileSize(10, 8_000_000, 0)).toBe(10_000_000);
-    expect(outputSize('9:16', 2160)).toEqual({ width: 2160, height: 3840 });
+    expect(estimateFileSize(10, 8_000_000, false)).toBe(10_000_000);
   });
 });

@@ -1,6 +1,6 @@
 import { ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input } from 'mediabunny';
 import type { Asset } from '../types';
-import { uid } from './defaults';
+import { uid } from '../store';
 import { createVideoElement, destroyVideoElement, seekVideo, waitEvent } from './registry';
 
 export const AUDIO_RATE = 48000;
@@ -9,31 +9,16 @@ export const AUDIO_RATE = 48000;
 export const FORCE_FALLBACK =
   typeof location !== 'undefined' && new URLSearchParams(location.search).has('forceFallback');
 
-export function guessKind(file: Blob, name: string): 'video' | 'audio' | 'image' {
-  const t = file.type || '';
-  if (t.startsWith('image/') || /\.(png|jpe?g|webp|gif|heic|svg)$/i.test(name)) return 'image';
-  if (t.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|flac|caf)$/i.test(name)) return 'audio';
-  return 'video';
-}
-
-/** Read basic information about a media file without loading it all into memory. */
+/** Read basic information about a video file without loading it all into memory. */
 export async function probeFile(file: File | Blob, name: string): Promise<Asset> {
   const id = uid();
-  const kind = guessKind(file, name);
-  const base = { id, kind, name, size: file.size, mime: file.type || 'video/mp4', stored: false } as const;
-
-  if (kind === 'image') {
-    const bmp = await createImageBitmap(file).catch(() => { throw new Error('This image format is not supported.'); });
-    const thumb = drawThumb(bmp, bmp.width, bmp.height, 'image/png');
-    const out: Asset = { ...base, duration: 0, width: bmp.width, height: bmp.height, codec: null, hasAudio: false, webCodecsDecodable: false, thumb };
-    bmp.close();
-    return out;
-  }
-  if (kind === 'audio') {
-    const buf = await decodeAudio(file);
-    if (!buf) throw new Error('Could not read this audio file.');
-    return { ...base, duration: buf.duration, width: 0, height: 0, codec: null, hasAudio: true, webCodecsDecodable: false, thumb: '' };
-  }
+  const base: Omit<Asset, 'duration' | 'width' | 'height' | 'codec' | 'hasAudio' | 'webCodecsDecodable' | 'thumb'> = {
+    id,
+    name,
+    size: file.size,
+    mime: file.type || 'video/mp4',
+    stored: false,
+  };
 
   // Path 1: Mediabunny (reads the container directly).
   try {
@@ -112,13 +97,13 @@ async function elementThumbnail(file: Blob, t: number): Promise<string> {
   }
 }
 
-function drawThumb(src: CanvasImageSource, w: number, h: number, type = 'image/jpeg'): string {
+function drawThumb(src: CanvasImageSource, w: number, h: number): string {
   const c = document.createElement('canvas');
   const s = 240 / Math.max(w, h);
   c.width = Math.max(2, Math.round(w * s));
   c.height = Math.max(2, Math.round(h * s));
   c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
-  const out = c.toDataURL(type, 0.7);
+  const out = c.toDataURL('image/jpeg', 0.7);
   c.width = c.height = 0;
   return out;
 }

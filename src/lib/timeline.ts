@@ -60,12 +60,14 @@ export function aspectValue(aspect: AspectRatio): number {
 
 /** Video bitrate in bits/second. Reference: 1080x1920 @30fps. */
 export function videoBitrate(width: number, height: number, fps: number, quality: ExportQuality): number {
-  const base = { high: 12_000_000, medium: 8_000_000, low: 4_000_000 }[quality];
+  const base = { high: 12_000_000, standard: 8_000_000, small: 4_000_000 }[quality];
   const pixelFactor = (width * height) / (1080 * 1920);
   const fpsFactor = Math.pow(fps / 30, 0.75);
   return Math.round(base * pixelFactor * fpsFactor);
 }
 
-export function estimateFileSize(durationSec: number, vBitrate: number, audioBitrate: number): number {
-  return Math.round(((vBitrate + audioBitrate) * durationSec) / 8);
+export const AUDIO_BITRATE = 192_000;
+
+export function estimateFileSize(durationSec: number, vBitrate: number, withAudio: boolean): number {
+  return Math.round(((vBitrate + (withAudio ? AUDIO_BITRATE : 0)) * durationSec) / 8);
 }
