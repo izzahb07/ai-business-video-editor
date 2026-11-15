@@ -41,6 +41,18 @@ describe('/transcribe', () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ language: 'ms', approximate: false, words: [{ text: 'Selamat', start: 0.1, end: 0.5 }, { text: 'datang', start: 0.5, end: 0.9 }] });
   });
+  it('uses Groq automatically for a gsk_ key', async () => {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
+      expect((init.body as FormData).get('model')).toBe('whisper-large-v3-turbo');
+      return new Response(JSON.stringify({ language: 'en', words: [{ word: 'Hi', start: 0, end: 0.3 }] }));
+    });
+    const fd = new FormData();
+    fd.append('file', new Blob([new Uint8Array(10)]), 'a.wav');
+    const r = await handle(new Request('https://w/transcribe', { method: 'POST', headers: H(), body: fd }), { ...env, TRANSCRIBE_API_KEY: 'gsk_abc' }, { fetch: fetchMock as never });
+    expect(r.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
   it('rejects oversize audio and reports missing configuration', async () => {
     const fd = new FormData();
     fd.append('file', new Blob([new Uint8Array(26 * 1024 * 1024)]), 'a.wav');
