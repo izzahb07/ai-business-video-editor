@@ -171,3 +171,12 @@ export function rmsFiltered(file, from, to, filter) {
   const m = r.stderr.toString().match(/RMS level dB:\s*(-?[\d.]+|-inf)/);
   return m ? (m[1] === '-inf' ? -Infinity : parseFloat(m[1])) : NaN;
 }
+
+/** Silent stretches (ffmpeg silencedetect) → [[start, end], ...]. */
+export function silences(file, noiseDb = -50, minDur = 0.2) {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-vn', '-af', `silencedetect=noise=${noiseDb}dB:d=${minDur}`, '-f', 'null', '-']);
+  const txt = r.stderr.toString();
+  const starts = [...txt.matchAll(/silence_start: ([\d.]+)/g)].map((m) => parseFloat(m[1]));
+  const ends = [...txt.matchAll(/silence_end: ([\d.]+)/g)].map((m) => parseFloat(m[1]));
+  return starts.map((s, i) => [s, ends[i] ?? Infinity]);
+}

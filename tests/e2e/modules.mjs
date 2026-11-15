@@ -1,7 +1,7 @@
 // Studio module tests (captions, colour, graphics, audio, AI). Imported by studio.mjs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { check, decodesClean, exportAndDownload, ff, fixture, isWhite, lum, newPage, OUT, pixel, probe, region, regionStats, rms, rmsFiltered, seekTo, setRange } from './lib.mjs';
+import { check, decodesClean, exportAndDownload, ff, fixture, isWhite, lum, newPage, OUT, pixel, probe, region, regionStats, rms, rmsFiltered, seekTo, setRange, silences } from './lib.mjs';
 import { startAiServer } from './mockServer.mjs';
 
 async function download(page, trigger, name) {
@@ -288,4 +288,91 @@ async function moduleAudio(browser, { A, C, importClips }) {
   }
 }
 
-export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio };
+// ------------------------------------------------------------------ Module 6: AI smart editing + hooks
+const HOOKS = {
+  hooks: ['curiosity', 'problem-solution', 'emotional', 'controversial-truthful', 'educational', 'storytelling', 'question', 'curiosity', 'educational', 'question']
+    .map((style, i) => ({ style, text: `Hook number ${i + 1}`, spoken: 'Say this', openingVisual: 'Show the before shot', why: 'Creates curiosity' })),
+  bestHookIndex: 2,
+  structure: [{ part: 'Hook', guidance: 'Open on the result', onScreenText: 'Wait for it' }, { part: 'Call to action', guidance: 'Ask to book', onScreenText: 'Book now' }],
+  retentionTips: ['Cut every 2–3 seconds'], titles: ['Title A'], description: 'Desc', caption: 'Caption', hashtags: ['#clean'], cta: 'Book your slot today',
+  claimsToVerify: ['"same-day service"'],
+};
+
+async function moduleAI(browser, { A, importClips }) {
+  console.log('\n▶ Module 6: silence/dead-air removal, scene changes, repeated shots, accept/reject, AI hooks');
+  const G = fixture('G_talking_with_pauses.mp4', (p) => ff(
+    '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30:duration=4', '-f', 'lavfi', '-i', 'smptebars=size=1280x720:rate=30:duration=4',
+    '-f', 'lavfi', '-i', "aevalsrc='0.5*sin(2*PI*440*t)*(between(t,0,2)+between(t,3.5,5.5)+between(t,6.2,7.5))':s=48000:d=8",
+    '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-map', '2:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', p));
+  const srv = await startAiServer({ words: [], hooksResult: HOOKS });
+  const { ctx, page, errors } = await newPage(browser);
+  const dur = async () => (await page.getByTestId('tl-time').textContent()).split('/')[1].trim();
+  try {
+    await importClips(page, [G, A, A]);
+    check(await dur() === '0:14.0', `starting length 14.0 s (${await dur()})`);
+    await page.getByTestId('tab-ai').click();
+    await page.getByTestId('analyze').click();
+    await page.getByTestId('accept-all-cuts').waitFor({ timeout: 60000 });
+    const n = async (t) => page.getByTestId(`sugg-${t}`).count();
+    const counts = { silence: await n('silence'), deadair: await n('deadair'), scene: await n('scene'), repeat: await n('repeat') };
+    console.log('    suggestions:', JSON.stringify(counts));
+    check(counts.silence === 2, `two pauses found inside speech (${counts.silence})`);
+    check(counts.deadair === 1, `trailing dead air found (${counts.deadair})`);
+    check(counts.scene >= 1, `scene change found (${counts.scene})`);
+    check(counts.repeat === 1, `repeated shot found (clip 3 = clip 2) (${counts.repeat})`);
+    const sceneText = await page.getByTestId('sugg-scene').first().textContent();
+    check(/0:0[34]\.\d/.test(sceneText), `scene change located near 4 s ("${sceneText.match(/at [\d:.]+/)?.[0]}")`);
+    await page.screenshot({ path: path.join(OUT, 'm6-suggestions.png') });
+
+    // Reject the repeat suggestion.
+    await page.getByTestId('sugg-repeat').getByTestId('reject').click();
+    check((await n('repeat')) === 0, 'rejected suggestion disappears and nothing changes');
+    check(await dur() === '0:14.0', 'reject leaves the edit untouched');
+
+    // Accept all silence cuts in one step.
+    await page.getByTestId('accept-all-cuts').click();
+    await page.getByTestId('analyze').waitFor({ timeout: 60000 });
+    const after = await dur();
+    check(after === '0:11.9', `silences removed: 14.0 s → ${after} (expected 11.9 s: 1.26 + 0.46 + 0.38 s cut)`);
+    await page.getByTestId('undo').click();
+    check(await dur() === '0:14.0', 'Undo restores all removed silence');
+    await page.getByTestId('redo').click();
+    check(await dur() === '0:11.9', 'Redo re-applies it');
+
+    // AI hooks through the real server code (Claude faked).
+    await page.getByTestId('info').click();
+    await page.getByTestId('svc-url').fill(srv.url);
+    await page.getByTestId('svc-pass').fill(srv.passcode);
+    await page.getByTestId('svc-test').click();
+    await page.getByTestId('svc-status').filter({ hasText: 'Connected' }).waitFor({ timeout: 10000 });
+    await page.getByLabel('Close').click();
+    await page.getByRole('radio', { name: 'Sales' }).click();
+    await page.getByTestId('hook-description').fill('Office cleaning service in Kuala Lumpur, weekly and monthly plans.');
+    await page.getByTestId('generate-hooks').click();
+    await page.getByTestId('consent-text').click();
+    await page.getByTestId('hook-results').waitFor({ timeout: 20000 });
+    check((await page.getByTestId('hook-item').count()) === 10, 'ten hook ideas shown');
+    check(await page.getByText('Check before posting').isVisible(), 'claims to verify are flagged to the user');
+    const call = srv.log.hooks[0];
+    const userMsg = JSON.stringify(call?.messages);
+    check(call?.model === 'claude-opus-5-5' && userMsg.includes('Kuala Lumpur') && userMsg.includes('Objective: sales'),
+      'server asked Claude with the description and chosen objective');
+    await page.getByTestId('use-hook').first().click();
+    await page.getByTestId('tab-text').click();
+    check((await page.getByTestId('overlay-bar').count()) === 1, 'chosen hook added as animated text in the first 3 s');
+
+    const file = await exportAndDownload(page, 'm6-smart', { Resolution: '720p' });
+    check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+    const d = parseFloat(probe(file).format.duration);
+    check(Math.abs(d - 11.9) < 0.15, `exported length matches the tightened edit (${d.toFixed(2)} s)`);
+    const gaps = silences(file, -50, 0.3).filter(([s]) => s < 5.8);
+    check(gaps.length === 0, `no pauses longer than 0.3 s remain in the speech section (${JSON.stringify(gaps)})`);
+    const speech = rms(file, 0.2, 5.6);
+    check(speech > -12, `speech kept intact (${speech.toFixed(1)} dB average)`);
+  } finally {
+    await ctx.close();
+    srv.close();
+  }
+}
+
+export const MODULES = { captions: moduleCaptions, color: moduleColor, graphics: moduleGraphics, audio: moduleAudio, ai: moduleAI };

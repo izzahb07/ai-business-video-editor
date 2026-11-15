@@ -398,3 +398,6 @@ input[type="range"]:disabled { opacity: 0.4; }
 .notice.small { font-size: 12px; padding: 8px 10px; }
 .bar-wave { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 .tl-bar > span:not(.tl-handle) { position: relative; }
+.sugg { background: var(--surface-2); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sugg.best { box-shadow: inset 0 0 0 2px var(--accent); }
+.sugg b { font-size: 15px; }
