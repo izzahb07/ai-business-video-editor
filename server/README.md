@@ -25,7 +25,7 @@ This small Cloudflare Worker keeps your keys as encrypted secrets and only answe
 |---|---|---|
 | Cloudflare Workers | Runs this server | Free plan: 100,000 requests/day |
 | OpenAI `whisper-1` | Captions (default) | ≈ US$0.006 per minute of audio |
-| Groq `whisper-large-v3-turbo` (alternative) | Captions | Cheaper per hour; set `TRANSCRIBE_BASE_URL`/`TRANSCRIBE_MODEL` in `wrangler.toml` |
+| Groq `whisper-large-v3-turbo` (recommended) | Captions | Free tier with daily limits; used automatically for `gsk_` keys |
 | Anthropic Claude (`claude-opus-5-5`) | Hooks & structure | ≈ US$0.05–0.15 per "Generate" (US$4 / 1M input, US$20 / 1M output tokens) |
 
 Set spending limits in each provider's dashboard.
@@ -36,7 +36,7 @@ Set spending limits in each provider's dashboard.
    - *My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template → Create.* Copy the token.
    - Your **Account ID** is on the Workers & Pages overview page (right side).
 2. **Keys** (only for the features you want):
-   - Captions: an OpenAI API key (platform.openai.com → API keys), or a Groq key.
+   - Captions (**recommended, free tier**): a Groq API key — console.groq.com → sign in → *API Keys → Create API Key* (starts with `gsk_`). The server detects it and uses Groq's Whisper automatically. An OpenAI key also works.
    - Hooks: an Anthropic API key (console.anthropic.com → API keys).
 3. **GitHub secrets**: open your repository on github.com → *Settings → Secrets and variables → Actions → New repository secret*. Add:
    | Name | Value |
@@ -44,7 +44,7 @@ Set spending limits in each provider's dashboard.
    | `CLOUDFLARE_API_TOKEN` | token from step 1 |
    | `CLOUDFLARE_ACCOUNT_ID` | account ID from step 1 |
    | `APP_PASSCODE` | any long password you make up (you'll type it in the app) |
-   | `TRANSCRIBE_API_KEY` | OpenAI (or Groq) key — optional |
+   | `TRANSCRIBE_API_KEY` | Groq key (`gsk_…`, free tier) or OpenAI key — for captions |
    | `ANTHROPIC_API_KEY` | Anthropic key — optional |
 4. **Deploy**: *Actions → "Deploy AI server (optional)" → Run workflow*. Wait for the green tick.
    The log's "Deploy worker" step shows your address, like `https://ai-video-studio-server.<you>.workers.dev`.
@@ -52,7 +52,6 @@ Set spending limits in each provider's dashboard.
    You should see "Connected ✓ · Transcription: ready · AI hooks: ready".
 
 If your app lives at a different address than `https://izzahb07.github.io`, change `ALLOWED_ORIGINS` in `server/wrangler.toml`.
-If you use Groq, uncomment the two Groq lines in `wrangler.toml` before deploying.
 
 ## For developers
 ```bash

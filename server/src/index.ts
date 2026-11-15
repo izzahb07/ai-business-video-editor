@@ -69,13 +69,15 @@ async function transcribe(req: Request, env: Env, fetchImpl: typeof fetch): Prom
 
   const up = new FormData();
   up.append('file', file, 'audio.wav');
-  up.append('model', env.TRANSCRIBE_MODEL || 'whisper-1');
+  // Groq keys start with "gsk_": use Groq's (free-tier) Whisper automatically.
+  const groq = env.TRANSCRIBE_API_KEY.startsWith('gsk_');
+  up.append('model', env.TRANSCRIBE_MODEL || (groq ? 'whisper-large-v3-turbo' : 'whisper-1'));
   up.append('response_format', 'verbose_json');
   up.append('timestamp_granularities[]', 'word');
   up.append('timestamp_granularities[]', 'segment');
   if (language) up.append('language', language);
 
-  const base = (env.TRANSCRIBE_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const base = (env.TRANSCRIBE_BASE_URL || (groq ? 'https://api.groq.com/openai/v1' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
   const r = await fetchImpl(`${base}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${env.TRANSCRIBE_API_KEY}` }, body: up });
   if (!r.ok) {
     const detail = (await r.text()).slice(0, 300);
